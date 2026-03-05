@@ -11,7 +11,7 @@
 //
 // Run: npx tsx supabase/seed/seed.ts
 // ============================================================================
-
+import 'dotenv/config';
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -20,10 +20,11 @@ const supabase = createClient(
 );
 
 // --- Deterministic IDs for referential integrity ---
-const BUILDING_ID = "550e8400-e29b-41d4-a716-446655440000";
+const BUILDING_ID = "550e8400-e29b-41d4-a716-000000000000";
 
 function uid(n: number): string {
-  return `550e8400-e29b-41d4-a716-4466554400${n.toString().padStart(2, "0")}`;
+  // UUID last segment must be exactly 12 hex chars
+  return `550e8400-e29b-41d4-a716-${n.toString().padStart(12, "0")}`;
 }
 
 // ============================================================================
