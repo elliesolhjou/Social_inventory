@@ -19,14 +19,12 @@ export default function MagicUpload() {
   const [createdItemId, setCreatedItemId] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState(0);
 
-  // Step 1 → 2: Frames captured, send to VisionAgent
   const handleFramesCaptured = useCallback(async (capturedFrames: string[]) => {
     setFrames(capturedFrames);
     setStep("analyzing");
     setError(null);
     setAnalysisProgress(0);
 
-    // Simulate progress while waiting for API
     const progressInterval = setInterval(() => {
       setAnalysisProgress((prev) => {
         if (prev >= 90) {
@@ -53,21 +51,16 @@ export default function MagicUpload() {
       }
 
       const result = await response.json();
-
-      // Small delay so 100% progress is visible
       await new Promise((r) => setTimeout(r, 400));
-
       setItemData(result.item);
       setStep("review");
     } catch (err: any) {
       clearInterval(progressInterval);
-      console.error("Vision analysis error:", err);
       setError(err.message || "Failed to analyze item. Please try again.");
       setStep("capture");
     }
   }, []);
 
-  // Step 3: Publish item to Supabase
   const handlePublish = useCallback(
     async (formData: ItemFormData) => {
       setIsSubmitting(true);
@@ -76,21 +69,12 @@ export default function MagicUpload() {
       try {
         const supabase = createClient();
 
-        // TODO: In production, get owner_id from auth session
-        // For dev, pick a random profile
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id")
-          .limit(20);
+        // ── FIX: use real logged-in user ──────────────────────────────────────
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("You must be signed in to publish an item.");
 
-        const randomOwner =
-          profiles?.[Math.floor(Math.random() * (profiles?.length ?? 1))];
-
-        if (!randomOwner) {
-          throw new Error("No profiles found. Run the seed script first.");
-        }
-
-        // Get building ID
         const { data: building } = await supabase
           .from("buildings")
           .select("id")
@@ -111,7 +95,7 @@ export default function MagicUpload() {
             rules: formData.rules,
             status: "available",
             times_borrowed: 0,
-            owner_id: randomOwner.id,
+            owner_id: user.id, // ← real user
             building_id: building?.id,
             metadata: {
               brand: formData.brand,
@@ -126,22 +110,23 @@ export default function MagicUpload() {
 
         if (insertError) throw insertError;
 
-        // Log agent action
-        await supabase.from("agent_logs").insert({
-          agent: "VisionAgent",
-          action: "magic_upload",
-          payload: {
-            item_id: newItem?.id,
-            confidence: formData.confidence,
-            frames_analyzed: frames.length,
-          },
-          building_id: building?.id,
-        }).then(() => {}); // fire and forget
+        await supabase
+          .from("agent_logs")
+          .insert({
+            agent: "VisionAgent",
+            action: "magic_upload",
+            payload: {
+              item_id: newItem?.id,
+              confidence: formData.confidence,
+              frames_analyzed: frames.length,
+            },
+            building_id: building?.id,
+          })
+          .then(() => {});
 
         setCreatedItemId(newItem?.id ?? null);
         setStep("success");
       } catch (err: any) {
-        console.error("Publish error:", err);
         setError(err.message || "Failed to publish item. Please try again.");
       } finally {
         setIsSubmitting(false);
@@ -150,7 +135,6 @@ export default function MagicUpload() {
     [frames],
   );
 
-  // Go back to capture
   const handleRetake = useCallback(() => {
     setFrames([]);
     setItemData(null);
@@ -160,7 +144,6 @@ export default function MagicUpload() {
 
   return (
     <main className="min-h-screen pb-20">
-      {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-inventory-200/50">
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link
@@ -190,7 +173,6 @@ export default function MagicUpload() {
       </header>
 
       <div className="max-w-2xl mx-auto px-6 pt-6">
-        {/* Step indicator */}
         <div className="flex items-center gap-2 mb-8">
           {["Capture", "Analyze", "Review"].map((label, i) => {
             const stepIndex =
@@ -203,28 +185,15 @@ export default function MagicUpload() {
                     : 0;
             const isActive = i === stepIndex;
             const isDone = i < stepIndex;
-
             return (
               <div key={label} className="flex items-center gap-2 flex-1">
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    isActive
-                      ? "bg-accent text-white scale-110"
-                      : isDone
-                        ? "bg-accent/20 text-accent"
-                        : "bg-inventory-100 text-inventory-400"
-                  }`}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isActive ? "bg-accent text-white scale-110" : isDone ? "bg-accent/20 text-accent" : "bg-inventory-100 text-inventory-400"}`}
                 >
                   {isDone ? "✓" : i + 1}
                 </div>
                 <span
-                  className={`text-xs font-medium hidden sm:block ${
-                    isActive
-                      ? "text-accent"
-                      : isDone
-                        ? "text-accent/60"
-                        : "text-inventory-400"
-                  }`}
+                  className={`text-xs font-medium hidden sm:block ${isActive ? "text-accent" : isDone ? "text-accent/60" : "text-inventory-400"}`}
                 >
                   {label}
                 </span>
@@ -238,7 +207,6 @@ export default function MagicUpload() {
           })}
         </div>
 
-        {/* Error display */}
         {error && (
           <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3">
             <svg
@@ -258,7 +226,6 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* STEP 1: Capture */}
         {step === "capture" && (
           <div className="animate-slide-up">
             <div className="mb-6">
@@ -274,19 +241,15 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* STEP 2: Analyzing */}
         {step === "analyzing" && (
           <div className="flex flex-col items-center justify-center py-20 animate-slide-up">
             <div className="relative w-24 h-24 mb-8">
-              {/* Spinning ring */}
               <div className="absolute inset-0 rounded-full border-4 border-inventory-100" />
               <div className="absolute inset-0 rounded-full border-4 border-accent border-t-transparent animate-spin" />
-              {/* Center icon */}
               <div className="absolute inset-3 rounded-full bg-accent/10 flex items-center justify-center">
                 <span className="text-2xl">🔍</span>
               </div>
             </div>
-
             <h2 className="font-display text-xl font-bold mb-2">
               VisionAgent analyzing...
             </h2>
@@ -294,8 +257,6 @@ export default function MagicUpload() {
               Identifying item, assessing condition, writing description, and
               suggesting pricing
             </p>
-
-            {/* Progress bar */}
             <div className="w-full max-w-xs">
               <div className="h-2 rounded-full bg-inventory-100 overflow-hidden">
                 <div
@@ -321,7 +282,6 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* STEP 3: Review */}
         {step === "review" && itemData && (
           <div className="animate-slide-up">
             <div className="mb-6">
@@ -342,18 +302,15 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* SUCCESS */}
         {step === "success" && (
           <div className="flex flex-col items-center justify-center py-20 animate-slide-up text-center">
             <div className="w-20 h-20 rounded-full bg-trust-high/10 flex items-center justify-center mb-6">
               <span className="text-4xl">🎉</span>
             </div>
-            <h2 className="font-display text-2xl font-bold mb-2">
-              Published!
-            </h2>
+            <h2 className="font-display text-2xl font-bold mb-2">Published!</h2>
             <p className="text-inventory-500 mb-8 max-w-sm">
-              Your item is now live in your building&apos;s inventory. Neighbors
-              can start borrowing it right away.
+              Your item is now live in your building's inventory. Neighbors can
+              start borrowing it right away.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
               {createdItemId && (

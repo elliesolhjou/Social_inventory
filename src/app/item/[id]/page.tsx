@@ -259,6 +259,7 @@ export default function ItemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showMessage, setShowMessage] = useState(false);
   const [borrowRequested, setBorrowRequested] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
   const supabase = createClient();
 
   // Search navigates to dashboard with query
@@ -283,6 +284,11 @@ export default function ItemDetailPage() {
         return;
       }
       setItem(data);
+      // Check if logged-in user is the owner
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setIsOwner(user?.id === data.owner?.id);
       setLoading(false);
     };
     fetchItem();
@@ -458,45 +464,26 @@ export default function ItemDetailPage() {
       {/* Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-4 glass border-t border-inventory-200/50">
         <div className="max-w-3xl mx-auto flex gap-3">
-          <button
-            onClick={() => setShowMessage(true)}
-            className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl border-2 border-inventory-200 text-inventory-700 font-display font-semibold text-sm hover:border-accent hover:text-accent transition-colors"
-          >
-            <svg
-              className="w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-              />
-            </svg>
-            Message
-          </button>
-          <button
-            onClick={() => setBorrowRequested(true)}
-            disabled={!isAvailable || borrowRequested}
-            className="flex-1 py-3.5 rounded-2xl font-display font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{
-              background: borrowRequested
-                ? "var(--color-trust-high)"
-                : isAvailable
-                  ? "var(--color-accent)"
-                  : "var(--color-inventory-200)",
-              color:
-                isAvailable || borrowRequested
-                  ? "white"
-                  : "var(--color-inventory-500)",
-            }}
-          >
-            {borrowRequested ? (
-              <>✓ Request Sent</>
-            ) : isAvailable ? (
-              <>
+          {isOwner ? (
+            // Owner view — manage item
+            <>
+              <Link
+                href="/dashboard"
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl border-2 border-inventory-200 text-inventory-700 font-display font-semibold text-sm hover:border-accent hover:text-accent transition-colors"
+              >
+                ← Dashboard
+              </Link>
+              <div className="flex-1 py-3.5 rounded-2xl bg-inventory-100 text-inventory-500 font-display font-bold text-sm flex items-center justify-center gap-2">
+                <span>🏠</span> This is your item
+              </div>
+            </>
+          ) : (
+            // Borrower view
+            <>
+              <button
+                onClick={() => setShowMessage(true)}
+                className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl border-2 border-inventory-200 text-inventory-700 font-display font-semibold text-sm hover:border-accent hover:text-accent transition-colors"
+              >
                 <svg
                   className="w-4 h-4"
                   fill="none"
@@ -507,16 +494,53 @@ export default function ItemDetailPage() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
                   />
                 </svg>
-                Request to Borrow · ${(item.deposit_cents / 100).toFixed(0)}{" "}
-                deposit
-              </>
-            ) : (
-              "Currently Unavailable"
-            )}
-          </button>
+                Message
+              </button>
+              <button
+                onClick={() => setBorrowRequested(true)}
+                disabled={!isAvailable || borrowRequested}
+                className="flex-1 py-3.5 rounded-2xl font-display font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: borrowRequested
+                    ? "var(--color-trust-high)"
+                    : isAvailable
+                      ? "var(--color-accent)"
+                      : "var(--color-inventory-200)",
+                  color:
+                    isAvailable || borrowRequested
+                      ? "white"
+                      : "var(--color-inventory-500)",
+                }}
+              >
+                {borrowRequested ? (
+                  <>✓ Request Sent</>
+                ) : isAvailable ? (
+                  <>
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                      />
+                    </svg>
+                    Request to Borrow · ${(item.deposit_cents / 100).toFixed(0)}{" "}
+                    deposit
+                  </>
+                ) : (
+                  "Currently Unavailable"
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
 

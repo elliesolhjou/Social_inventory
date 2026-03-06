@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SearchBar from "@/components/SearchBar";
+import UserMenu from "@/components/UserMenu";
 
 type Item = {
   id: string;
@@ -16,6 +18,7 @@ type Item = {
   status: string;
   metadata?: { brand?: string; model?: string };
   owner: {
+    id: string;
     username: string;
     display_name: string;
     trust_score: number;
@@ -75,7 +78,6 @@ function getTimeOfDay(): string {
   return "evening";
 }
 
-// ── Search filter logic ───────────────────────────────────────────────────────
 function matchesSearch(item: Item, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.toLowerCase();
@@ -93,21 +95,27 @@ function matchesSearch(item: Item, query: string): boolean {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [transactionCount, setTransactionCount] = useState(0);
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
   const supabase = createClient();
 
   useEffect(() => {
     const fetchData = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       const [itemsRes, profilesRes, statsRes] = await Promise.all([
         supabase
           .from("items")
           .select(
-            "*, owner:profiles(username, display_name, trust_score, reputation_tags)",
+            "*, owner:profiles(id, username, display_name, trust_score, reputation_tags)",
           )
           .eq("status", "available")
           .order("times_borrowed", { ascending: false })
@@ -119,9 +127,21 @@ export default function Dashboard() {
           .limit(10),
         supabase.from("transactions").select("id", { count: "exact" }),
       ]);
+
       setItems(itemsRes.data ?? []);
       setProfiles(profilesRes.data ?? []);
       setTransactionCount(statsRes.data?.length ?? 0);
+
+      // Fetch unread message count
+      if (user) {
+        const { data: unread } = await supabase
+          .from("messages")
+          .select("id", { count: "exact" })
+          .eq("recipient_id", user.id)
+          .is("read_at", null);
+        setUnreadCount(unread?.length ?? 0);
+      }
+
       setLoading(false);
     };
     fetchData();
@@ -129,7 +149,7 @@ export default function Dashboard() {
 
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
-    setActiveCategory("All"); // reset category when searching
+    setActiveCategory("All");
   }, []);
 
   const categories = [
@@ -137,7 +157,6 @@ export default function Dashboard() {
     ...Array.from(new Set(items.map((i) => i.category))),
   ];
 
-  // Apply both search + category filter
   const filteredItems = items.filter((item) => {
     const categoryMatch =
       activeCategory === "All" || item.category === activeCategory;
@@ -187,12 +206,53 @@ export default function Dashboard() {
               <span className="hidden sm:inline">Magic Upload</span>
               <span className="sm:hidden">Add</span>
             </Link>
+            {/* Notifications bell */}
+            <Link
+              href="/notifications"
+              className="relative w-8 h-8 rounded-full bg-inventory-100 flex items-center justify-center hover:bg-inventory-200 transition-colors"
+            >
+              <svg
+                className="w-4 h-4 text-inventory-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                />
+              </svg>
+            </Link>
+            {/* Inbox icon with unread badge */}
+            <Link
+              href="/inbox"
+              className="relative w-8 h-8 rounded-full bg-inventory-100 flex items-center justify-center hover:bg-inventory-200 transition-colors"
+            >
+              <svg
+                className="w-4 h-4 text-inventory-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
+                  {unreadCount}
+                </span>
+              )}
+            </Link>
             <span className="text-sm text-inventory-500 hidden sm:block">
               The Meridian
             </span>
-            <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-              <span className="text-accent text-xs font-bold">M</span>
-            </div>
+            <UserMenu />
           </div>
         </div>
       </header>
@@ -214,7 +274,7 @@ export default function Dashboard() {
           <SearchBar onSearch={handleSearch} />
         </div>
 
-        {/* Category chips — hide while searching */}
+        {/* Category chips */}
         {!isSearching && (
           <section className="mb-8">
             <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest mb-3">
@@ -306,7 +366,6 @@ export default function Dashboard() {
                   <div className="p-4 sm:p-5">
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-display font-bold text-sm sm:text-base leading-tight line-clamp-2">
-                        {/* Highlight search match in title */}
                         {isSearching
                           ? highlightMatch(item.title, searchQuery)
                           : item.title}
@@ -335,7 +394,14 @@ export default function Dashboard() {
                               {(item.owner as any).display_name?.[0] ?? "?"}
                             </span>
                           </div>
-                          <span className="text-sm text-inventory-500 truncate">
+                          <span
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              router.push(`/profile/${(item.owner as any).id}`);
+                            }}
+                            className="text-sm text-inventory-500 truncate hover:text-accent transition-colors cursor-pointer"
+                          >
                             {(item.owner as any).username}
                           </span>
                         </div>
@@ -354,7 +420,7 @@ export default function Dashboard() {
           )}
         </section>
 
-        {/* Top Neighbors — hide while searching */}
+        {/* Top Neighbors */}
         {!isSearching && (
           <section className="mb-8">
             <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest mb-4">
@@ -362,9 +428,10 @@ export default function Dashboard() {
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
               {profiles.map((p) => (
-                <div
+                <Link
                   key={p.id}
-                  className="glass rounded-2xl p-3 sm:p-4 text-center card-hover"
+                  href={`/profile/${p.id}`}
+                  className="glass rounded-2xl p-3 sm:p-4 text-center card-hover block"
                 >
                   <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-inventory-200 flex items-center justify-center mx-auto mb-2 sm:mb-3">
                     <span className="font-display font-bold text-inventory-600 text-sm sm:text-base">
@@ -383,7 +450,7 @@ export default function Dashboard() {
                       {p.reputation_tags[0]}
                     </p>
                   )}
-                </div>
+                </Link>
               ))}
             </div>
           </section>
@@ -393,7 +460,6 @@ export default function Dashboard() {
   );
 }
 
-// Highlight matching text in titles
 function highlightMatch(text: string, query: string): React.ReactNode {
   if (!query.trim()) return text;
   const regex = new RegExp(
