@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, DM_Sans, JetBrains_Mono } from "next/font/google";
+import MilesChatBubble from "@/components/MilesChatBubble";
 import "./globals.css";
 
 const fontDisplay = Space_Grotesk({
@@ -41,7 +42,10 @@ export default function RootLayout({
       lang="en"
       className={`${fontDisplay.variable} ${fontBody.variable} ${fontMono.variable}`}
     >
-      <body className="font-body min-h-screen">{children}</body>
+      <body className="font-body min-h-screen">
+        {children}
+        <MilesChatBubble />
+      </body>
     </html>
   );
 }
