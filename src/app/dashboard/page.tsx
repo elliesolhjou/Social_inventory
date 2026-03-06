@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import SearchBar from "@/components/SearchBar";
 
 type Item = {
   id: string;
   title: string;
+  description: string;
   category: string;
   subcategory?: string;
   deposit_cents: number;
@@ -30,8 +30,6 @@ type Profile = {
   trust_score: number;
   reputation_tags: string[];
 };
-
-// ─── Helper Components ────────────────────────────────────────────────────────
 
 function TrustBadge({ score }: { score: number }) {
   const level = score >= 85 ? "high" : score >= 60 ? "medium" : "low";
@@ -77,13 +75,29 @@ function getTimeOfDay(): string {
   return "evening";
 }
 
-// ─── Main Dashboard ───────────────────────────────────────────────────────────
+// ── Search filter logic ───────────────────────────────────────────────────────
+function matchesSearch(item: Item, query: string): boolean {
+  if (!query.trim()) return true;
+  const q = query.toLowerCase();
+  return (
+    item.title?.toLowerCase().includes(q) ||
+    item.description?.toLowerCase().includes(q) ||
+    item.category?.toLowerCase().includes(q) ||
+    item.subcategory?.toLowerCase().includes(q) ||
+    item.metadata?.brand?.toLowerCase().includes(q) ||
+    item.metadata?.model?.toLowerCase().includes(q) ||
+    (item.owner as any)?.display_name?.toLowerCase().includes(q) ||
+    (item.owner as any)?.username?.toLowerCase().includes(q) ||
+    false
+  );
+}
 
 export default function Dashboard() {
   const [items, setItems] = useState<Item[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [transactionCount, setTransactionCount] = useState(0);
-  const [activeCategory, setActiveCategory] = useState<string>("All");
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
@@ -105,7 +119,6 @@ export default function Dashboard() {
           .limit(10),
         supabase.from("transactions").select("id", { count: "exact" }),
       ]);
-
       setItems(itemsRes.data ?? []);
       setProfiles(profilesRes.data ?? []);
       setTransactionCount(statsRes.data?.length ?? 0);
@@ -114,17 +127,25 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  // Derive categories from items
+  const handleSearch = useCallback((q: string) => {
+    setSearchQuery(q);
+    setActiveCategory("All"); // reset category when searching
+  }, []);
+
   const categories = [
     "All",
     ...Array.from(new Set(items.map((i) => i.category))),
   ];
 
-  // Filter items client-side
-  const filteredItems =
-    activeCategory === "All"
-      ? items
-      : items.filter((i) => i.category === activeCategory);
+  // Apply both search + category filter
+  const filteredItems = items.filter((item) => {
+    const categoryMatch =
+      activeCategory === "All" || item.category === activeCategory;
+    const searchMatch = matchesSearch(item, searchQuery);
+    return categoryMatch && searchMatch;
+  });
+
+  const isSearching = searchQuery.trim().length > 0;
 
   if (loading) {
     return (
@@ -141,7 +162,7 @@ export default function Dashboard() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
           <Link
             href="/"
-            className="font-display text-lg font-bold tracking-tight"
+            className="font-display text-lg font-bold tracking-tight flex-shrink-0"
           >
             The Social Inventory
           </Link>
@@ -177,8 +198,8 @@ export default function Dashboard() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8">
-        {/* Welcome + Stats */}
-        <div className="mb-8">
+        {/* Welcome */}
+        <div className="mb-6">
           <h1 className="font-display text-2xl sm:text-3xl font-bold mb-2">
             Good {getTimeOfDay()} 👋
           </h1>
@@ -188,50 +209,57 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Category Filter Chips */}
-        <section className="mb-8">
-          <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest mb-3">
-            Categories
-          </h2>
-          {/* Horizontally scrollable on mobile */}
-          <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap scrollbar-hide">
-            {categories.map((cat) => {
-              const isActive = activeCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`
-                    flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200
-                    ${
+        {/* Search Bar */}
+        <div className="mb-6">
+          <SearchBar onSearch={handleSearch} />
+        </div>
+
+        {/* Category chips — hide while searching */}
+        {!isSearching && (
+          <section className="mb-8">
+            <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest mb-3">
+              Categories
+            </h2>
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap scrollbar-hide">
+              {categories.map((cat) => {
+                const isActive = activeCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setActiveCategory(cat)}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
                       isActive
                         ? "bg-accent text-white shadow-md scale-105"
                         : "bg-inventory-100 text-inventory-700 hover:bg-inventory-200"
-                    }
-                  `}
-                >
-                  {cat !== "All" && (
-                    <span className="text-base leading-none">
-                      {getCategoryEmoji(cat)}
-                    </span>
-                  )}
-                  <span className="capitalize">{cat}</span>
-                  {isActive && cat !== "All" && (
-                    <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">
-                      {filteredItems.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
+                    }`}
+                  >
+                    {cat !== "All" && (
+                      <span className="text-base leading-none">
+                        {getCategoryEmoji(cat)}
+                      </span>
+                    )}
+                    <span className="capitalize">{cat}</span>
+                    {isActive && cat !== "All" && (
+                      <span className="bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">
+                        {filteredItems.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* Items Grid */}
         <section className="mb-12">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest">
-              {activeCategory === "All" ? "Available Now" : activeCategory}
+              {isSearching
+                ? `Results for "${searchQuery}"`
+                : activeCategory === "All"
+                  ? "Available Now"
+                  : activeCategory}
             </h2>
             <span className="text-xs text-inventory-400">
               {filteredItems.length} item{filteredItems.length !== 1 ? "s" : ""}
@@ -241,20 +269,26 @@ export default function Dashboard() {
           {filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <span className="text-5xl mb-4">
-                {getCategoryEmoji(activeCategory)}
+                {isSearching ? "🔍" : getCategoryEmoji(activeCategory)}
               </span>
               <p className="font-display font-bold text-inventory-700 mb-1">
-                No {activeCategory} items yet
+                {isSearching
+                  ? `No results for "${searchQuery}"`
+                  : `No ${activeCategory} items yet`}
               </p>
               <p className="text-sm text-inventory-400 mb-6">
-                Be the first to add one to the building
+                {isSearching
+                  ? "Try a different search term"
+                  : "Be the first to add one"}
               </p>
-              <Link
-                href="/upload"
-                className="px-5 py-2.5 bg-accent text-white rounded-xl font-display font-semibold text-sm hover:bg-accent-dark transition-colors"
-              >
-                Magic Upload →
-              </Link>
+              {!isSearching && (
+                <Link
+                  href="/upload"
+                  className="px-5 py-2.5 bg-accent text-white rounded-xl font-display font-semibold text-sm hover:bg-accent-dark transition-colors"
+                >
+                  Magic Upload →
+                </Link>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
@@ -264,17 +298,18 @@ export default function Dashboard() {
                   key={item.id}
                   className="glass rounded-2xl overflow-hidden card-hover group block"
                 >
-                  {/* Image */}
                   <div className="h-36 sm:h-40 bg-gradient-to-br from-inventory-100 to-inventory-200 flex items-center justify-center">
                     <span className="text-4xl opacity-50">
                       {getCategoryEmoji(item.category)}
                     </span>
                   </div>
-
                   <div className="p-4 sm:p-5">
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="font-display font-bold text-sm sm:text-base leading-tight line-clamp-2">
-                        {item.title}
+                        {/* Highlight search match in title */}
+                        {isSearching
+                          ? highlightMatch(item.title, searchQuery)
+                          : item.title}
                       </h3>
                       {item.deposit_cents > 0 && (
                         <span className="text-xs text-inventory-400 font-mono whitespace-nowrap ml-2 mt-0.5">
@@ -282,7 +317,6 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
-
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-xs px-2 py-0.5 rounded-full bg-inventory-100 text-inventory-600 capitalize">
                         {item.category}
@@ -293,7 +327,6 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
-
                     {item.owner && (
                       <div className="flex items-center justify-between pt-3 border-t border-inventory-100">
                         <div className="flex items-center gap-2 min-w-0">
@@ -309,7 +342,6 @@ export default function Dashboard() {
                         <TrustBadge score={(item.owner as any).trust_score} />
                       </div>
                     )}
-
                     {item.metadata?.brand && (
                       <p className="text-xs text-inventory-400 mt-2 font-mono truncate">
                         {item.metadata.brand} {item.metadata.model ?? ""}
@@ -322,39 +354,64 @@ export default function Dashboard() {
           )}
         </section>
 
-        {/* Top Neighbors */}
-        <section className="mb-8">
-          <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest mb-4">
-            Most Trusted Neighbors
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-            {profiles.map((p) => (
-              <div
-                key={p.id}
-                className="glass rounded-2xl p-3 sm:p-4 text-center card-hover"
-              >
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-inventory-200 flex items-center justify-center mx-auto mb-2 sm:mb-3">
-                  <span className="font-display font-bold text-inventory-600 text-sm sm:text-base">
-                    {p.display_name?.[0] ?? "?"}
-                  </span>
-                </div>
-                <p className="font-display font-bold text-xs sm:text-sm truncate">
-                  {p.display_name}
-                </p>
-                {/* <p className="text-xs text-inventory-400 mb-2">
-                  Unit {p.unit_number}
-                </p> */}
-                <TrustBadge score={p.trust_score} />
-                {p.reputation_tags?.length > 0 && (
-                  <p className="text-xs text-inventory-400 mt-1.5 truncate">
-                    {p.reputation_tags[0]}
+        {/* Top Neighbors — hide while searching */}
+        {!isSearching && (
+          <section className="mb-8">
+            <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest mb-4">
+              Most Trusted Neighbors
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+              {profiles.map((p) => (
+                <div
+                  key={p.id}
+                  className="glass rounded-2xl p-3 sm:p-4 text-center card-hover"
+                >
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-inventory-200 flex items-center justify-center mx-auto mb-2 sm:mb-3">
+                    <span className="font-display font-bold text-inventory-600 text-sm sm:text-base">
+                      {p.display_name?.[0] ?? "?"}
+                    </span>
+                  </div>
+                  <p className="font-display font-bold text-xs sm:text-sm truncate">
+                    {p.display_name}
                   </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
+                  <p className="text-xs text-inventory-400 mb-2">
+                    Unit {p.unit_number}
+                  </p>
+                  <TrustBadge score={p.trust_score} />
+                  {p.reputation_tags?.length > 0 && (
+                    <p className="text-xs text-inventory-400 mt-1.5 truncate">
+                      {p.reputation_tags[0]}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
+  );
+}
+
+// Highlight matching text in titles
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const regex = new RegExp(
+    `(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+    "gi",
+  );
+  const parts = text.split(regex);
+  return (
+    <>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} className="bg-accent/20 text-accent rounded px-0.5">
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

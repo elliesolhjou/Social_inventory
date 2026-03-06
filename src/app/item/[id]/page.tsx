@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { useParams, useRouter } from "next/navigation";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { useParams } from "next/navigation";
+import SearchBar from "@/components/SearchBar";
 
 type Item = {
   id: string;
@@ -37,8 +37,6 @@ type Item = {
   };
 };
 
-// ─── Message Popup ────────────────────────────────────────────────────────────
-
 function MessagePopup({
   owner,
   itemTitle,
@@ -58,14 +56,10 @@ function MessagePopup({
   const handleSend = async () => {
     if (!message.trim()) return;
     setSending(true);
-
     try {
-      // Get current user
       const {
         data: { user },
       } = await supabase.auth.getUser();
-
-      // If auth not set up yet, use a random sender for dev
       let senderId = user?.id;
       if (!senderId) {
         const { data: profiles } = await supabase
@@ -76,21 +70,17 @@ function MessagePopup({
           .single();
         senderId = profiles?.id;
       }
-
-      if (!senderId) throw new Error("No sender found");
-
-      await supabase.from("messages").insert({
-        sender_id: senderId,
-        recipient_id: owner.id,
-        content: message.trim(),
-        message_type: "item_inquiry",
-      });
-
+      if (senderId) {
+        await supabase.from("messages").insert({
+          sender_id: senderId,
+          recipient_id: owner.id,
+          content: message.trim(),
+          message_type: "item_inquiry",
+        });
+      }
       setSent(true);
       setTimeout(onClose, 1800);
-    } catch (err) {
-      console.error("Send error:", err);
-      // Still show success for demo
+    } catch {
       setSent(true);
       setTimeout(onClose, 1800);
     } finally {
@@ -100,16 +90,12 @@ function MessagePopup({
 
   return (
     <>
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-fade-in"
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
         onClick={onClose}
       />
-
-      {/* Popup */}
       <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-6 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-md sm:w-full animate-slide-up">
         <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-inventory-200">
-          {/* Header */}
           <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-inventory-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center">
@@ -145,8 +131,6 @@ function MessagePopup({
               </svg>
             </button>
           </div>
-
-          {/* Body */}
           <div className="px-6 py-4">
             {sent ? (
               <div className="flex flex-col items-center py-6 text-center">
@@ -167,14 +151,14 @@ function MessagePopup({
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   rows={4}
-                  className="w-full px-4 py-3 rounded-2xl border-2 border-inventory-200 focus:border-accent outline-none text-sm resize-none transition-colors font-body"
+                  className="w-full px-4 py-3 rounded-2xl border-2 border-inventory-200 focus:border-accent outline-none text-sm resize-none transition-colors"
                   placeholder="Write your message..."
                   autoFocus
                 />
                 <button
                   onClick={handleSend}
                   disabled={sending || !message.trim()}
-                  className="w-full mt-3 py-3.5 bg-accent text-white rounded-2xl font-display font-bold text-sm hover:bg-accent-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full mt-3 py-3.5 bg-accent text-white rounded-2xl font-display font-bold text-sm hover:bg-accent-dark transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {sending ? (
                     <>
@@ -209,8 +193,6 @@ function MessagePopup({
   );
 }
 
-// ─── Trust Badge ──────────────────────────────────────────────────────────────
-
 function TrustBadge({ score }: { score: number }) {
   const level = score >= 85 ? "high" : score >= 60 ? "medium" : "low";
   const colors = {
@@ -228,8 +210,6 @@ function TrustBadge({ score }: { score: number }) {
     </span>
   );
 }
-
-// ─── Condition Badge ──────────────────────────────────────────────────────────
 
 function ConditionBadge({ condition }: { condition: string }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -272,8 +252,6 @@ function getCategoryEmoji(category: string): string {
   return map[category] ?? "📦";
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
 export default function ItemDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -282,6 +260,14 @@ export default function ItemDetailPage() {
   const [showMessage, setShowMessage] = useState(false);
   const [borrowRequested, setBorrowRequested] = useState(false);
   const supabase = createClient();
+
+  // Search navigates to dashboard with query
+  const handleSearch = useCallback(
+    (q: string) => {
+      if (q.trim()) router.push(`/dashboard?q=${encodeURIComponent(q)}`);
+    },
+    [router],
+  );
 
   useEffect(() => {
     const fetchItem = async () => {
@@ -292,7 +278,6 @@ export default function ItemDetailPage() {
         )
         .eq("id", params.id)
         .single();
-
       if (error || !data) {
         router.push("/dashboard");
         return;
@@ -303,52 +288,48 @@ export default function ItemDetailPage() {
     fetchItem();
   }, [params.id]);
 
-  if (loading) {
+  if (loading)
     return (
       <main className="min-h-screen flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-accent/20 border-t-accent rounded-full animate-spin" />
       </main>
     );
-  }
-
   if (!item) return null;
 
   const isAvailable = item.status === "available";
 
   return (
     <main className="min-h-screen pb-24">
-      {/* Header */}
+      {/* Header with search */}
       <header className="sticky top-0 z-40 glass border-b border-inventory-200/50">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link
-            href="/dashboard"
-            className="flex items-center gap-2 text-inventory-500 hover:text-inventory-900 transition-colors"
-          >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2 text-inventory-500 hover:text-inventory-900 transition-colors flex-shrink-0"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
-            <span className="text-sm font-medium hidden sm:block">Back</span>
-          </Link>
-          <span className="font-display text-sm font-bold text-inventory-400 uppercase tracking-widest">
-            {item.category}
-          </span>
-          <div className="w-16 flex justify-end">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
+              </svg>
+              <span className="text-sm font-medium hidden sm:block">Back</span>
+            </Link>
+            <SearchBar
+              onSearch={handleSearch}
+              placeholder="Search other items..."
+              className="flex-1"
+            />
             <span
-              className={`text-xs px-2.5 py-1 rounded-full font-bold ${
-                isAvailable
-                  ? "bg-trust-high/10 text-trust-high"
-                  : "bg-inventory-100 text-inventory-500"
-              }`}
+              className={`text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 ${isAvailable ? "bg-trust-high/10 text-trust-high" : "bg-inventory-100 text-inventory-500"}`}
             >
               {isAvailable ? "Available" : item.status}
             </span>
@@ -356,10 +337,9 @@ export default function ItemDetailPage() {
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-6 pt-8 space-y-6">
-        {/* Hero Card */}
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+        {/* Hero */}
         <div className="glass rounded-3xl overflow-hidden">
-          {/* Image area */}
           <div className="h-56 sm:h-72 bg-gradient-to-br from-inventory-100 to-inventory-200 flex items-center justify-center relative">
             <span className="text-8xl opacity-30">
               {getCategoryEmoji(item.category)}
@@ -373,8 +353,6 @@ export default function ItemDetailPage() {
               )}
             </div>
           </div>
-
-          {/* Title + meta */}
           <div className="p-6">
             <div className="flex items-start justify-between gap-4 mb-3">
               <h1 className="font-display text-2xl font-bold leading-tight">
@@ -389,8 +367,6 @@ export default function ItemDetailPage() {
             <p className="text-inventory-600 text-sm leading-relaxed">
               {item.description}
             </p>
-
-            {/* AI Description */}
             {item.ai_description && (
               <div className="mt-4 p-4 rounded-2xl bg-inventory-50 border border-inventory-100">
                 <p className="text-xs font-bold text-inventory-400 uppercase tracking-widest mb-1.5">
@@ -404,7 +380,7 @@ export default function ItemDetailPage() {
           </div>
         </div>
 
-        {/* Borrow Info Card */}
+        {/* Borrow Details */}
         <div className="glass rounded-3xl p-6">
           <h2 className="font-display text-sm font-bold text-inventory-400 uppercase tracking-widest mb-4">
             Borrow Details
@@ -429,7 +405,6 @@ export default function ItemDetailPage() {
               <p className="text-xs text-inventory-400 mt-1">Fee</p>
             </div>
           </div>
-
           {item.rules && (
             <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-100">
               <span className="text-lg mt-0.5">📋</span>
@@ -438,7 +413,7 @@ export default function ItemDetailPage() {
           )}
         </div>
 
-        {/* Owner Card */}
+        {/* Owner */}
         {item.owner && (
           <div className="glass rounded-3xl p-6">
             <h2 className="font-display text-sm font-bold text-inventory-400 uppercase tracking-widest mb-4">
@@ -456,7 +431,7 @@ export default function ItemDetailPage() {
                     {item.owner.display_name}
                   </p>
                   <p className="text-sm text-inventory-400">
-                    @{item.owner.username} · 
+                    @{item.owner.username} ·
                   </p>
                   <div className="mt-2">
                     <TrustBadge score={item.owner.trust_score} />
@@ -464,8 +439,6 @@ export default function ItemDetailPage() {
                 </div>
               </div>
             </div>
-
-            {/* Reputation tags */}
             {item.owner.reputation_tags?.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-inventory-100">
                 {item.owner.reputation_tags.map((tag) => (
@@ -482,10 +455,9 @@ export default function ItemDetailPage() {
         )}
       </div>
 
-      {/* Sticky Bottom CTA */}
+      {/* Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 z-40 p-4 glass border-t border-inventory-200/50">
         <div className="max-w-3xl mx-auto flex gap-3">
-          {/* Message Owner */}
           <button
             onClick={() => setShowMessage(true)}
             className="flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl border-2 border-inventory-200 text-inventory-700 font-display font-semibold text-sm hover:border-accent hover:text-accent transition-colors"
@@ -505,8 +477,6 @@ export default function ItemDetailPage() {
             </svg>
             Message
           </button>
-
-          {/* Borrow Request */}
           <button
             onClick={() => setBorrowRequested(true)}
             disabled={!isAvailable || borrowRequested}
@@ -550,7 +520,6 @@ export default function ItemDetailPage() {
         </div>
       </div>
 
-      {/* Message Popup */}
       {showMessage && item.owner && (
         <MessagePopup
           owner={item.owner}
