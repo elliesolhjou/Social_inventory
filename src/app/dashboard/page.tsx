@@ -111,24 +111,44 @@ export default function Dashboard() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      const [itemsRes, profilesRes, statsRes] = await Promise.all([
-        supabase
-          .from("items")
-          .select(
-            "*, owner:profiles(id, username, display_name, trust_score, reputation_tags)",
-          )
-          .eq("status", "available")
-          .order("times_borrowed", { ascending: false })
-          .limit(50),
-        supabase
-          .from("profiles")
-          .select("*")
-          .order("trust_score", { ascending: false })
-          .limit(10),
-        supabase.from("transactions").select("id", { count: "exact" }),
-      ]);
+      const itemSelect =
+        "*, owner:profiles(id, username, display_name, trust_score, reputation_tags)";
 
-      setItems(itemsRes.data ?? []);
+      const [communityRes, myItemsRes, profilesRes, statsRes] =
+        await Promise.all([
+          supabase
+            .from("items")
+            .select(itemSelect)
+            .eq("status", "available")
+            .order("times_borrowed", { ascending: false })
+            .limit(50),
+          // Always fetch the current user's items separately so they're never cut off
+          user
+            ? supabase
+                .from("items")
+                .select(itemSelect)
+                .eq("owner_id", user.id)
+                .eq("status", "available")
+                .order("created_at", { ascending: false })
+            : Promise.resolve({ data: [] }),
+          supabase
+            .from("profiles")
+            .select("*")
+            .order("trust_score", { ascending: false })
+            .limit(10),
+          supabase.from("transactions").select("id", { count: "exact" }),
+        ]);
+
+      // Merge: user's items first, then community (deduplicated)
+      const myItems = myItemsRes.data ?? [];
+      const community = communityRes.data ?? [];
+      const myIds = new Set(myItems.map((i: any) => i.id));
+      const merged = [
+        ...myItems,
+        ...community.filter((i: any) => !myIds.has(i.id)),
+      ];
+
+      setItems(merged);
       setProfiles(profilesRes.data ?? []);
       setTransactionCount(statsRes.data?.length ?? 0);
 
