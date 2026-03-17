@@ -120,8 +120,8 @@ export default function Dashboard() {
             .from("items")
             .select(itemSelect)
             .eq("status", "available")
-            .order("times_borrowed", { ascending: false })
-            .limit(50),
+            .order("created_at", { ascending: false })
+            .limit(100),
           // Always fetch the current user's items separately so they're never cut off
           user
             ? supabase
