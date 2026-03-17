@@ -103,6 +103,8 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [broadcastCount, setBroadcastCount] = useState(0);
+  const [userId, setUserId] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export default function Dashboard() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (user) setUserId(user.id);
 
       const itemSelect =
         "*, owner:profiles(id, username, display_name, trust_score, reputation_tags)";
@@ -160,12 +163,47 @@ export default function Dashboard() {
           .eq("recipient_id", user.id)
           .is("read_at", null);
         setUnreadCount(unread?.length ?? 0);
+
+        // Fetch active broadcast count (not mine, not expired)
+        const { data: bcast } = await supabase
+          .from("broadcasts")
+          .select("id", { count: "exact" })
+          .neq("sender_id", user.id)
+          .gt("expires_at", new Date().toISOString());
+        setBroadcastCount(bcast?.length ?? 0);
       }
 
       setLoading(false);
     };
     fetchData();
   }, []);
+
+  // Realtime: listen for new messages and broadcasts
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel("dashboard-notifications")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${userId}` },
+        () => setUnreadCount((c) => c + 1),
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "broadcasts" },
+        (payload: any) => {
+          if (payload.new.sender_id !== userId) {
+            setBroadcastCount((c) => c + 1);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
@@ -244,6 +282,11 @@ export default function Dashboard() {
                   d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
                 />
               </svg>
+              {broadcastCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
+                  {broadcastCount}
+                </span>
+              )}
             </Link>
             {/* Inbox icon with unread badge */}
             <Link

@@ -111,9 +111,23 @@ export default function NotificationsPage() {
     load();
   }, []);
 
+  const [repliedTo, setRepliedTo] = useState<Set<string>>(new Set());
+
   const handleReplyToBroadcast = async (broadcast: Broadcast) => {
-    // Navigate to inbox with this person
-    router.push(`/inbox?with=${broadcast.sender.id}`);
+    if (!myId || repliedTo.has(broadcast.id)) return;
+
+    // Send a pre-written message instantly
+    const itemName = broadcast.item_query ?? "that item";
+    const { error } = await supabase.from("messages").insert({
+      sender_id: myId,
+      recipient_id: broadcast.sender?.id,
+      content: `Hey ${broadcast.sender?.display_name?.split(" ")[0]}! I saw your request for ${itemName} — I have one you can borrow! Let me know when works for you 🙌`,
+      message_type: "broadcast_reply",
+    });
+
+    if (!error) {
+      setRepliedTo((prev) => new Set(prev).add(broadcast.id));
+    }
   };
 
   const unreadMsgCount = messages.filter(m => !m.read_at).length;
@@ -261,16 +275,23 @@ export default function NotificationsPage() {
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleReplyToBroadcast(b)}
-                            className="flex-1 py-2 bg-accent text-white rounded-xl font-display font-semibold text-xs hover:bg-accent-dark transition-colors"
+                            disabled={repliedTo.has(b.id)}
+                            className={`flex-1 py-2 rounded-xl font-display font-semibold text-xs transition-colors ${
+                              repliedTo.has(b.id)
+                                ? "bg-trust-high text-white"
+                                : "bg-accent text-white hover:bg-accent-dark"
+                            }`}
                           >
-                            I have one! Message them →
+                            {repliedTo.has(b.id) ? "✓ Sent! They'll see it in their inbox" : "I have it! →"}
                           </button>
-                          <Link
-                            href={`/dashboard?q=${encodeURIComponent(b.item_query ?? "")}`}
-                            className="px-3 py-2 border border-inventory-200 text-inventory-600 rounded-xl font-display font-semibold text-xs hover:border-accent hover:text-accent transition-colors"
-                          >
-                            Browse
-                          </Link>
+                          {!repliedTo.has(b.id) && (
+                            <Link
+                              href={`/dashboard?q=${encodeURIComponent(b.item_query ?? "")}`}
+                              className="px-3 py-2 border border-inventory-200 text-inventory-600 rounded-xl font-display font-semibold text-xs hover:border-accent hover:text-accent transition-colors"
+                            >
+                              Browse
+                            </Link>
+                          )}
                         </div>
                       </div>
                     </div>
