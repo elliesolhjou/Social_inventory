@@ -17,6 +17,95 @@ type Profile = {
   created_at: string;
 };
 
+type Item = {
+  id: string;
+  title: string;
+  category: string;
+  deposit_cents: number;
+  status: string;
+  ai_condition: string | null;
+};
+
+type BorrowingTransaction = {
+  id: string;
+  item_id: string;
+  owner_id: string;
+  state: string;
+  due_at: string | null;
+  picked_up_at: string | null;
+  item: {
+    title: string;
+    category: string;
+    deposit_cents: number;
+  };
+  owner: {
+    display_name: string;
+    avatar_url: string | null;
+  };
+};
+
+type HistoryTransaction = {
+  id: string;
+  item_id: string;
+  state: string;
+  returned_at: string | null;
+  created_at: string;
+  item: {
+    title: string;
+    category: string;
+  };
+};
+
+type Tab = "items" | "borrowing" | "history";
+
+function getDaysRemaining(dueAt: string | null): {
+  text: string;
+  urgent: boolean;
+  overdue: boolean;
+} {
+  if (!dueAt) return { text: "No due date", urgent: false, overdue: false };
+  const now = new Date();
+  const due = new Date(dueAt);
+  const diffMs = due.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) {
+    return {
+      text: `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? "s" : ""}`,
+      urgent: true,
+      overdue: true,
+    };
+  } else if (diffDays === 0) {
+    return { text: "Due today", urgent: true, overdue: false };
+  } else if (diffDays === 1) {
+    return { text: "Due tomorrow", urgent: true, overdue: false };
+  } else {
+    return {
+      text: `${diffDays} days left`,
+      urgent: diffDays <= 3,
+      overdue: false,
+    };
+  }
+}
+
+function getCategoryEmoji(category: string): string {
+  const map: Record<string, string> = {
+    Electronics: "🔌",
+    Clothing: "👗",
+    Kitchen: "🍳",
+    Tools: "🔧",
+    Sports: "⚽",
+    Books: "📚",
+    Furniture: "🪑",
+    Games: "🎮",
+    Music: "🎵",
+    Office: "💼",
+    Outdoor: "🏕️",
+    Travel: "✈️",
+  };
+  return map[category] || "📦";
+}
+
 export default function MyProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -32,6 +121,17 @@ export default function MyProfilePage() {
     unit_number: "",
     bio: "",
   });
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<Tab>("items");
+  const [myItems, setMyItems] = useState<Item[]>([]);
+  const [borrowing, setBorrowing] = useState<BorrowingTransaction[]>([]);
+  const [history, setHistory] = useState<HistoryTransaction[]>([]);
+  const [tabLoading, setTabLoading] = useState(false);
+  const [itemCount, setItemCount] = useState(0);
+  const [borrowingCount, setBorrowingCount] = useState(0);
+  const [historyCount, setHistoryCount] = useState(0);
+
   const supabase = createClient();
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,6 +166,7 @@ export default function MyProfilePage() {
     }
   };
 
+  // Load profile + counts
   useEffect(() => {
     const load = async () => {
       const {
@@ -91,10 +192,138 @@ export default function MyProfilePage() {
           bio: data.bio ?? "",
         });
       }
+
+      // Fetch counts in parallel
+      const [itemsRes, borrowingRes, historyRes] = await Promise.all([
+        supabase
+          .from("items")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("borrower_id", user.id)
+          .in("state", ["active", "approved"]),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("borrower_id", user.id)
+          .in("state", [
+            "completed",
+            "returned",
+            "auto_released",
+            "resolved",
+            "cancelled",
+          ]),
+      ]);
+
+      setItemCount(itemsRes.count ?? 0);
+      setBorrowingCount(borrowingRes.count ?? 0);
+      setHistoryCount(historyRes.count ?? 0);
+
       setLoading(false);
     };
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Load tab data on tab change
+  useEffect(() => {
+    if (!profile) return;
+
+    const loadTabData = async () => {
+      setTabLoading(true);
+
+      if (activeTab === "items" && myItems.length === 0) {
+        const { data } = await supabase
+          .from("items")
+          .select("id, title, category, deposit_cents, status, ai_condition")
+          .eq("owner_id", profile.id)
+          .order("created_at", { ascending: false });
+        setMyItems(data ?? []);
+      }
+
+      if (activeTab === "borrowing" && borrowing.length === 0) {
+        const { data } = await supabase
+          .from("transactions")
+          .select(
+            `
+            id, item_id, owner_id, state, due_at, picked_up_at,
+            items:item_id ( title, category, deposit_cents ),
+            profiles:owner_id ( display_name, avatar_url )
+          `,
+          )
+          .eq("borrower_id", profile.id)
+          .in("state", ["active", "approved"])
+          .order("due_at", { ascending: true });
+
+        const mapped = (data ?? []).map((t: any) => {
+          const item = Array.isArray(t.items) ? t.items[0] : t.items;
+          const owner = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles;
+          return {
+            id: t.id,
+            item_id: t.item_id,
+            owner_id: t.owner_id,
+            state: t.state,
+            due_at: t.due_at,
+            picked_up_at: t.picked_up_at,
+            item: {
+              title: item?.title ?? "Unknown item",
+              category: item?.category ?? "Other",
+              deposit_cents: item?.deposit_cents ?? 0,
+            },
+            owner: {
+              display_name: owner?.display_name ?? "Unknown",
+              avatar_url: owner?.avatar_url ?? null,
+            },
+          };
+        });
+        setBorrowing(mapped);
+      }
+
+      if (activeTab === "history" && history.length === 0) {
+        const { data } = await supabase
+          .from("transactions")
+          .select(
+            `
+            id, item_id, state, returned_at, created_at,
+            items:item_id ( title, category )
+          `,
+          )
+          .eq("borrower_id", profile.id)
+          .in("state", [
+            "completed",
+            "returned",
+            "auto_released",
+            "resolved",
+            "cancelled",
+          ])
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        const mapped = (data ?? []).map((t: any) => {
+          const item = Array.isArray(t.items) ? t.items[0] : t.items;
+          return {
+            id: t.id,
+            item_id: t.item_id,
+            state: t.state,
+            returned_at: t.returned_at,
+            created_at: t.created_at,
+            item: {
+              title: item?.title ?? "Unknown item",
+              category: item?.category ?? "Other",
+            },
+          };
+        });
+        setHistory(mapped);
+      }
+
+      setTabLoading(false);
+    };
+
+    loadTabData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, profile]);
 
   const handleSave = async () => {
     if (!profile) return;
@@ -164,12 +393,6 @@ export default function MyProfilePage() {
           <h1 className="font-display font-bold text-base flex-1">
             My Profile
           </h1>
-          <Link
-            href={`/profile/${profile.id}`}
-            className="text-sm text-inventory-400 hover:text-accent transition-colors font-medium"
-          >
-            View public →
-          </Link>
         </div>
       </header>
 
@@ -240,6 +463,352 @@ export default function MyProfilePage() {
               <span className="w-1.5 h-1.5 rounded-full bg-current" />
               {trustLabels[trustLevel]} · {profile.trust_score.toFixed(0)}
             </span>
+          </div>
+        </div>
+
+        {/* ── Stats row ──────────────────────────────────────────── */}
+        <div className="glass rounded-3xl p-5">
+          <div className="grid grid-cols-3 text-center">
+            <div>
+              <p className="font-display font-black text-2xl text-inventory-900">
+                {itemCount}
+              </p>
+              <p className="text-xs text-inventory-400 mt-0.5">Items listed</p>
+            </div>
+            <div className="border-x border-inventory-100">
+              <p className="font-display font-black text-2xl text-inventory-900">
+                {borrowingCount}
+              </p>
+              <p className="text-xs text-inventory-400 mt-0.5">Borrowing</p>
+            </div>
+            <div>
+              <p className="font-display font-black text-2xl text-inventory-900">
+                {historyCount}
+              </p>
+              <p className="text-xs text-inventory-400 mt-0.5">Completed</p>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Three-tab section ──────────────────────────────────── */}
+        <div className="glass rounded-3xl overflow-hidden">
+          {/* Tabs */}
+          <div className="flex border-b border-inventory-100">
+            {(
+              [
+                { key: "items", label: "My Items", count: itemCount },
+                { key: "borrowing", label: "Borrowing", count: borrowingCount },
+                { key: "history", label: "History", count: historyCount },
+              ] as { key: Tab; label: string; count: number }[]
+            ).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex-1 py-3.5 text-sm font-display font-semibold transition-all relative ${
+                  activeTab === tab.key
+                    ? "text-accent"
+                    : "text-inventory-400 hover:text-inventory-600"
+                }`}
+              >
+                {tab.label}
+                {tab.count > 0 && (
+                  <span
+                    className={`ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-bold ${
+                      activeTab === tab.key
+                        ? "bg-accent/10 text-accent"
+                        : "bg-inventory-100 text-inventory-400"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                )}
+                {activeTab === tab.key && (
+                  <span className="absolute bottom-0 left-4 right-4 h-0.5 bg-accent rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div className="p-4 min-h-[200px]">
+            {tabLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="w-8 h-8 border-3 border-inventory-200 border-t-accent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* ── My Items tab ─────────────────────────────── */}
+                {activeTab === "items" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-inventory-400 uppercase tracking-widest">
+                        My Items ({myItems.length})
+                      </p>
+                      <Link
+                        href="/upload"
+                        className="text-sm text-white bg-accent px-4 py-1.5 rounded-full font-display font-semibold hover:bg-accent-dark transition-colors"
+                      >
+                        + Add Item
+                      </Link>
+                    </div>
+
+                    {myItems.length === 0 ? (
+                      <div className="text-center py-12">
+                        <span className="text-4xl mb-3 block">📦</span>
+                        <p className="text-inventory-500 text-sm mb-4">
+                          No items listed yet
+                        </p>
+                        <Link
+                          href="/upload"
+                          className="inline-flex items-center gap-2 py-2.5 px-6 bg-accent text-white rounded-2xl font-display font-semibold text-sm"
+                        >
+                          List your first item
+                        </Link>
+                      </div>
+                    ) : (
+                      myItems.map((item) => (
+                        <Link
+                          key={item.id}
+                          href={`/item/${item.id}`}
+                          className="flex items-center gap-4 p-4 rounded-2xl border border-inventory-100 hover:border-inventory-200 transition-colors"
+                        >
+                          <div className="w-12 h-12 rounded-xl bg-inventory-50 flex items-center justify-center text-xl">
+                            {getCategoryEmoji(item.category)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-display font-semibold text-sm truncate">
+                              {item.title}
+                            </p>
+                            <span className="text-xs text-inventory-400 bg-inventory-50 px-2 py-0.5 rounded-full">
+                              {item.category}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-display font-bold text-sm text-accent">
+                              ${(item.deposit_cents / 100).toFixed(0)}
+                            </p>
+                            <span
+                              className={`text-xs font-medium ${
+                                item.status === "available"
+                                  ? "text-trust-high"
+                                  : item.status === "borrowed"
+                                    ? "text-amber-500"
+                                    : "text-inventory-400"
+                              }`}
+                            >
+                              {item.status === "available"
+                                ? "Available"
+                                : item.status === "borrowed"
+                                  ? "Borrowed"
+                                  : item.status}
+                            </span>
+                          </div>
+                        </Link>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* ── Borrowing tab (active loans) ────────────── */}
+                {activeTab === "borrowing" && (
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-inventory-400 uppercase tracking-widest mb-2">
+                      Currently Borrowing ({borrowing.length})
+                    </p>
+
+                    {borrowing.length === 0 ? (
+                      <div className="text-center py-12">
+                        <span className="text-4xl mb-3 block">🤝</span>
+                        <p className="text-inventory-500 text-sm mb-1">
+                          Nothing borrowed right now
+                        </p>
+                        <p className="text-inventory-400 text-xs">
+                          Browse your building's inventory to find something
+                        </p>
+                      </div>
+                    ) : (
+                      borrowing.map((txn) => {
+                        const due = getDaysRemaining(txn.due_at);
+                        return (
+                          <div
+                            key={txn.id}
+                            className={`p-4 rounded-2xl border transition-colors ${
+                              due.overdue
+                                ? "border-red-200 bg-red-50/50"
+                                : due.urgent
+                                  ? "border-amber-200 bg-amber-50/30"
+                                  : "border-inventory-100"
+                            }`}
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className="w-12 h-12 rounded-xl bg-inventory-50 flex items-center justify-center text-xl flex-shrink-0">
+                                {getCategoryEmoji(txn.item.category)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-display font-semibold text-sm truncate">
+                                  {txn.item.title}
+                                </p>
+                                <p className="text-xs text-inventory-400 mt-0.5">
+                                  From{" "}
+                                  <span className="font-medium text-inventory-600">
+                                    {txn.owner.display_name}
+                                  </span>
+                                </p>
+
+                                {/* Due date countdown */}
+                                <div className="flex items-center gap-1.5 mt-2">
+                                  <svg
+                                    className={`w-3.5 h-3.5 ${
+                                      due.overdue
+                                        ? "text-red-500"
+                                        : due.urgent
+                                          ? "text-amber-500"
+                                          : "text-inventory-400"
+                                    }`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                    />
+                                  </svg>
+                                  <span
+                                    className={`text-xs font-semibold ${
+                                      due.overdue
+                                        ? "text-red-600"
+                                        : due.urgent
+                                          ? "text-amber-600"
+                                          : "text-inventory-500"
+                                    }`}
+                                  >
+                                    {due.text}
+                                  </span>
+                                </div>
+
+                                {/* Deposit info */}
+                                <p className="text-xs text-inventory-400 mt-1">
+                                  Deposit held:{" "}
+                                  <span className="font-medium">
+                                    ${(txn.item.deposit_cents / 100).toFixed(0)}
+                                  </span>
+                                </p>
+                              </div>
+
+                              {/* Return Now button */}
+                              <Link
+                                href={`/return/${txn.id}`}
+                                className="flex-shrink-0 py-2 px-4 bg-accent text-white rounded-xl font-display font-bold text-xs hover:bg-accent-dark transition-colors flex items-center gap-1.5"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+                                  />
+                                </svg>
+                                Return Now
+                              </Link>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {/* ── History tab ─────────────────────────────── */}
+                {activeTab === "history" && (
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-inventory-400 uppercase tracking-widest mb-2">
+                      Transaction History ({history.length})
+                    </p>
+
+                    {history.length === 0 ? (
+                      <div className="text-center py-12">
+                        <span className="text-4xl mb-3 block">📋</span>
+                        <p className="text-inventory-500 text-sm">
+                          No transaction history yet
+                        </p>
+                      </div>
+                    ) : (
+                      history.map((txn) => {
+                        const stateLabels: Record<
+                          string,
+                          { label: string; color: string }
+                        > = {
+                          completed: {
+                            label: "Completed",
+                            color: "text-trust-high",
+                          },
+                          returned: {
+                            label: "Returned",
+                            color: "text-trust-high",
+                          },
+                          auto_released: {
+                            label: "Auto-released",
+                            color: "text-blue-500",
+                          },
+                          resolved: {
+                            label: "Resolved",
+                            color: "text-inventory-500",
+                          },
+                          cancelled: {
+                            label: "Cancelled",
+                            color: "text-inventory-400",
+                          },
+                        };
+                        const stateInfo = stateLabels[txn.state] ?? {
+                          label: txn.state,
+                          color: "text-inventory-400",
+                        };
+                        const date = txn.returned_at ?? txn.created_at;
+                        const formattedDate = date
+                          ? new Date(date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })
+                          : "";
+
+                        return (
+                          <div
+                            key={txn.id}
+                            className="flex items-center gap-4 p-4 rounded-2xl border border-inventory-100"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-inventory-50 flex items-center justify-center text-lg">
+                              {getCategoryEmoji(txn.item.category)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-display font-semibold text-sm truncate">
+                                {txn.item.title}
+                              </p>
+                              <p className="text-xs text-inventory-400">
+                                {formattedDate}
+                              </p>
+                            </div>
+                            <span
+                              className={`text-xs font-semibold ${stateInfo.color}`}
+                            >
+                              {stateInfo.label}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
