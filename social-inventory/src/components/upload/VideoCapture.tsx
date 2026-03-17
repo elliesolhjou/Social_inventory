@@ -28,104 +28,108 @@ export default function VideoCapture({
     "environment",
   );
   const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
+  const [isFlipping, setIsFlipping] = useState(false);
 
-  // ── FIX 1: Reliable stream attachment ──────────────────────────────────────
-  // Instead of calling .play() immediately after srcObject assignment (race condition),
-  // we let onLoadedMetadata handle play — guarantees stream is ready before rendering.
-  const handleVideoMetadata = useCallback(() => {
-    // startCamera handles play — this is a safety net only
-    videoRef.current?.play().catch(() => {});
-  }, []);
-
-  // Start camera — just acquire stream, useEffect attaches it after video mounts
-  const startCamera = useCallback(async () => {
-    try {
-      setCameraError(null);
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
-      } catch {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false,
-        });
-      }
-      streamRef.current = stream;
-      setCameraActive(true); // triggers re-render → video element mounts → useEffect attaches stream
-    } catch (err: any) {
-      console.error("Camera error:", err);
-      if (err.name === "NotAllowedError") {
-        setCameraError("Camera access denied. Please allow camera permissions and try again.");
-      } else if (err.name === "NotFoundError") {
-        setCameraError("No camera found. Try uploading a photo instead.");
-      } else {
-        setCameraError("Could not access camera. Try uploading a photo instead.");
-      }
+  // ── KEY FIX: Attach stream AFTER video element renders ────────────────────
+  // cameraActive=true renders <video>. This effect runs post-render so
+  // videoRef.current is guaranteed to exist when we assign srcObject.
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      const video = videoRef.current;
+      video.srcObject = streamRef.current;
+      video.play().catch((err) => console.error("Play error:", err));
     }
-  }, [facingMode]);
+  }, [cameraActive]);
 
-  // Stop camera
-  const stopCamera = useCallback(() => {
+  const startCamera = useCallback(
+    async (mode?: "environment" | "user") => {
+      try {
+        setCameraError(null);
+        const facing = mode ?? facingMode;
+
+        // Stop any existing stream
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+        }
+
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: facing,
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          });
+        } catch {
+          // Fallback — no facingMode constraint, works on most laptops
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          });
+        }
+
+        streamRef.current = stream;
+        setCameraActive(true); // triggers useEffect above to attach stream
+      } catch (err: any) {
+        console.error("Camera error:", err);
+        setCameraError(
+          err.name === "NotAllowedError"
+            ? "Camera access denied. Please allow camera permissions and try again."
+            : err.name === "NotFoundError"
+              ? "No camera found. Try uploading a photo instead."
+              : "Could not access camera. Try uploading a photo instead.",
+        );
+      }
+    },
+    [facingMode],
+  );
+
+  const stopCamera = useCallback((keepFrames = false) => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
     setCameraActive(false);
+    if (!keepFrames) setCapturedFrames([]);
   }, []);
 
-  // Attach stream to video element after it mounts (cameraActive = true triggers this)
-  useEffect(() => {
-    const video = videoRef.current;
-    const stream = streamRef.current;
-    if (!cameraActive || !video || !stream) return;
+  // ── FIX: Flip — pass new mode directly, don't rely on state ──────────────
+  const flipCamera = useCallback(async () => {
+    if (isFlipping) return;
+    setIsFlipping(true);
+    const newMode = facingMode === "environment" ? "user" : "environment";
+    setFacingMode(newMode);
 
-    video.srcObject = stream;
-    video.play().catch(() => {
-      setTimeout(() => video.play().catch(() => {}), 300);
-    });
-  }, [cameraActive]);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
 
-  // Flip camera
-  const flipCamera = useCallback(() => {
-    stopCamera();
-    setFacingMode((prev) => (prev === "environment" ? "user" : "environment"));
-  }, [stopCamera]);
+    await new Promise((r) => setTimeout(r, 150));
+    await startCamera(newMode);
+    setIsFlipping(false);
+  }, [facingMode, isFlipping, startCamera]);
 
-  useEffect(() => {
-    if (cameraActive) startCamera();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facingMode]);
-
-  // ── FIX 2: Always output JPEG, strip prefix correctly ──────────────────────
-  // canvas.toDataURL sometimes returns image/png on laptops even when you request jpeg.
-  // We always strip ANY data URI prefix before sending to Gemini.
   const captureFrame = useCallback((): string | null => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
+    if (video.readyState < 2 || video.videoWidth === 0) return null;
 
-    // Use actual video dimensions, fall back to sensible defaults
-    const w = video.videoWidth || video.offsetWidth || 1280;
-    const h = video.videoHeight || video.offsetHeight || 720;
-    if (w === 0 || h === 0) return null;
-
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
-    ctx.drawImage(video, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-    return dataUrl;
+    ctx.drawImage(video, 0, 0);
+    return canvas.toDataURL("image/jpeg", 0.85);
   }, []);
 
-  // Start 5-second recording
   const startRecording = useCallback(() => {
     const frames: string[] = [];
     setRecording(true);
@@ -154,57 +158,35 @@ export default function VideoCapture({
         const lastFrame = captureFrame();
         if (lastFrame) frames.push(lastFrame);
 
-        setCapturedFrames(frames);
-        stopCamera();
-        onFramesCaptured(frames);
+        const finalFrames = frames.filter(Boolean);
+        setCapturedFrames(finalFrames);
+        stopCamera(true);
+        onFramesCaptured(finalFrames);
       }
     }, 1000);
   }, [captureFrame, stopCamera, onFramesCaptured, onRecordingStateChange]);
 
-  // Take a single photo — retries via rAF until video has painted
-  const takePhoto = useCallback(() => {
-    let attempts = 0;
-    const tryCapture = () => {
-      const frame = captureFrame();
-      if (frame) {
-        setCapturedFrames([frame]);
-        stopCamera();
-        onFramesCaptured([frame]);
-      } else if (attempts++ < 20) {
-        requestAnimationFrame(tryCapture);
-      }
-    };
-    requestAnimationFrame(tryCapture);
-  }, [captureFrame, stopCamera, onFramesCaptured]);
-
-  // Handle file upload fallback
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-
       const frames: string[] = [];
 
       if (file.type.startsWith("video/")) {
         const video = document.createElement("video");
         video.src = URL.createObjectURL(file);
         video.muted = true;
-
         await new Promise<void>((resolve) => {
           video.onloadedmetadata = () => {
             video.currentTime = 0;
             resolve();
           };
         });
-
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d")!;
         const duration = Math.min(video.duration, 10);
-        const frameCount = 4;
-        const interval = duration / frameCount;
-
-        for (let i = 0; i < frameCount; i++) {
-          video.currentTime = i * interval;
+        for (let i = 0; i < 4; i++) {
+          video.currentTime = i * (duration / 4);
           await new Promise<void>((resolve) => {
             video.onseeked = () => {
               canvas.width = video.videoWidth;
@@ -233,21 +215,19 @@ export default function VideoCapture({
     [onFramesCaptured],
   );
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopCamera();
+      if (streamRef.current)
+        streamRef.current.getTracks().forEach((t) => t.stop());
       if (timerRef.current) clearInterval(timerRef.current);
       if (frameTimerRef.current) clearInterval(frameTimerRef.current);
     };
-  }, [stopCamera]);
+  }, []);
 
   return (
     <div className="space-y-4">
-      {/* Hidden canvas for frame capture */}
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Camera viewport */}
       <div className="relative aspect-[4/3] rounded-3xl overflow-hidden bg-inventory-950">
         {cameraActive ? (
           <>
@@ -257,25 +237,17 @@ export default function VideoCapture({
               playsInline
               muted
               autoPlay
-              disablePictureInPicture
-              onLoadedMetadata={handleVideoMetadata}
-              onCanPlay={() => videoRef.current?.play().catch(() => {})}
             />
 
-            {/* Recording overlay */}
             {recording && (
               <div className="absolute inset-0 pointer-events-none">
                 <div className="absolute inset-0 border-4 border-red-500 rounded-3xl animate-pulse" />
-
-                {/* Countdown */}
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/90 text-white">
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
                   <span className="font-mono font-bold text-sm">
                     {countdown}s
                   </span>
                 </div>
-
-                {/* Circular progress */}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
                   <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
                     <circle
@@ -303,31 +275,33 @@ export default function VideoCapture({
               </div>
             )}
 
-            {/* Camera controls */}
             {!recording && (
               <div className="absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/60 to-transparent">
                 <div className="flex items-center justify-center gap-6">
-                  {/* Flip */}
                   <button
                     onClick={flipCamera}
-                    className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-colors"
+                    disabled={isFlipping}
+                    className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-colors disabled:opacity-50"
                   >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
+                    {isFlipping ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                        />
+                      </svg>
+                    )}
                   </button>
 
-                  {/* Record */}
                   <button
                     onClick={startRecording}
                     className="w-20 h-20 rounded-full bg-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
@@ -339,21 +313,8 @@ export default function VideoCapture({
                     </div>
                   </button>
 
-                  {/* Take Photo */}
                   <button
-                    onClick={takePhoto}
-                    className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-colors"
-                    title="Take a photo"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </button>
-
-                  {/* Close */}
-                  <button
-                    onClick={stopCamera}
+                    onClick={() => stopCamera(false)}
                     className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-white hover:bg-white/30 transition-colors"
                   >
                     <svg
@@ -433,10 +394,9 @@ export default function VideoCapture({
                 </div>
               </>
             )}
-
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
               <button
-                onClick={startCamera}
+                onClick={() => startCamera()}
                 className="flex-1 py-3 px-6 bg-accent text-white rounded-2xl font-display font-semibold text-sm hover:bg-accent-dark transition-colors flex items-center justify-center gap-2"
               >
                 <svg
@@ -454,7 +414,6 @@ export default function VideoCapture({
                 </svg>
                 Open Camera
               </button>
-
               <label className="flex-1 py-3 px-6 border-2 border-inventory-700 text-inventory-300 rounded-2xl font-display font-semibold text-sm hover:border-inventory-500 transition-colors cursor-pointer flex items-center justify-center gap-2">
                 <svg
                   className="w-4 h-4"
@@ -482,7 +441,6 @@ export default function VideoCapture({
         )}
       </div>
 
-      {/* Retake */}
       {capturedFrames.length > 0 && !cameraActive && (
         <button
           onClick={() => {

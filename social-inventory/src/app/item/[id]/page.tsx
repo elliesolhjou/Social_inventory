@@ -426,7 +426,7 @@ export default function ItemDetailPage() {
               Listed By
             </h2>
             <div className="flex items-center justify-between">
-              <Link href={`/profile/${item.owner.id}`} className="flex items-center gap-4 hover:opacity-80 transition-opacity">
+              <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
                   <span className="font-display font-bold text-xl text-accent">
                     {item.owner.display_name?.[0] ?? "?"}
@@ -443,7 +443,7 @@ export default function ItemDetailPage() {
                     <TrustBadge score={item.owner.trust_score} />
                   </div>
                 </div>
-              </Link>
+              </div>
             </div>
             {item.owner.reputation_tags?.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-inventory-100">

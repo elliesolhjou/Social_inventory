@@ -14,41 +14,13 @@ const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent";
 
 // VisionAgent system prompt — for item identification
-const VISION_SYSTEM_PROMPT = `You are VisionAgent, part of Proxe — a hyper-local sharing platform for apartment buildings.
+const VISION_SYSTEM_PROMPT = `You are VisionAgent, part of The Social Inventory — a hyper-local sharing platform for apartment buildings.
 
 Your task: Analyze images of a household item and return structured metadata for a lending listing.
 
-PROHIBITED ITEMS — CRITICAL RULE:
-Before doing anything else, check if the item in the image is prohibited.
-The following items are NEVER allowed on Proxe under any circumstances:
-
-- HIGHEST PRIORITY — Sexual or pornographic materials of any kind: magazines, videos, DVDs, images, or any media depicting nudity or sexual acts. This includes adult magazines, adult DVDs, sex toys, or any sexually explicit material.
-- ABSOLUTE TOP PRIORITY — Any material that sexualizes, depicts, or could be used to harm minors in any way. This includes but is not limited to child sexual abuse material (CSAM), any suggestive content involving minors, or items marketed toward the grooming or exploitation of children. If there is ANY doubt, flag as prohibited.
-
-- Weapons of any kind: firearms, handguns, pistols, rifles, shotguns, revolvers, BB guns, airsoft guns, pellet guns, knives intended as weapons, daggers, swords, tasers, stun guns, brass knuckles
-- Ammunition, bullets, shell casings, gun parts or accessories (holsters, magazines, scopes used on weapons)
-- Explosive devices, grenades, fireworks, pyrotechnics
-- Illegal drugs, controlled substances, drug paraphernalia (pipes, bongs, rolling papers marketed for drug use)
-- Child car seats or child safety restraints of any kind
-- Medical devices requiring prescription or professional supervision (oxygen tanks, CPAP machines, insulin pens, defibrillators)
-- Hazardous materials: fuel canisters, gas tanks, propane tanks, solvents, pesticides, paint thinner
-- Biological materials or biohazard items
-- Motorized vehicles requiring registration: cars, motorcycles, scooters, e-bikes over 750W
-- Items with visible product recall stickers or warnings
-
-IF THE ITEM IS PROHIBITED, return this exact JSON and nothing else:
-{
-  "prohibited": true,
-  "prohibited_reason": "string — one sentence explaining what was detected and why, e.g. 'A Glock 23 handgun was detected. Firearms are not permitted on Proxe.'"
-}
-Do NOT fill out any other fields. Do NOT attempt to describe or categorize the item.
-
-IF THE ITEM IS ALLOWED, return the full metadata below with prohibited set to false.
-
-You MUST respond with ONLY valid JSON, no markdown, no explanation, no preamble:
+You MUST respond with ONLY valid JSON, no markdown, no explanation, no preamble. The JSON schema:
 
 {
-  "prohibited": false,
   "title": "string — concise item name, e.g. 'DJI Mini 4 Pro Drone'",
   "category": "string — one of: electronics, kitchen, outdoor, sports, tools, entertainment, home, wellness, travel, creative, beauty, clothing, baby_kids, music, automotive",
   "subcategory": "string — a more specific sub-type, use snake_case, e.g. 'drone', 'stand_mixer', 'yoga_mat'",
@@ -66,7 +38,7 @@ You MUST respond with ONLY valid JSON, no markdown, no explanation, no preamble:
   "confidence": "number — 0 to 1, your confidence in the identification"
 }
 
-Guidelines for allowed items:
+Guidelines:
 - Be specific about brand/model when visible
 - Condition assessment should be based on visible wear, scratches, dents, etc.
 - Suggested deposit should reflect item value and fragility
@@ -88,10 +60,7 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        {
-          error:
-            "Gemini API key not configured. Set GEMINI_API_KEY in .env.local",
-        },
+        { error: "Gemini API key not configured. Set GEMINI_API_KEY in .env.local" },
         { status: 500 },
       );
     }
@@ -151,7 +120,8 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
 
     // Extract text from Gemini response
-    const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const textContent =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!textContent) {
       console.error("Unexpected Gemini response shape:", JSON.stringify(data));
@@ -164,19 +134,6 @@ export async function POST(request: NextRequest) {
     // Parse the JSON response (strip any accidental markdown fences)
     const cleanJson = textContent.replace(/```json\n?|```\n?/g, "").trim();
     const itemData = JSON.parse(cleanJson);
-
-    // ── Prohibited item check — VisionAgent detected a prohibited item ────────
-    if (itemData.prohibited === true) {
-      return NextResponse.json(
-        {
-          prohibited: true,
-          prohibited_reason:
-            itemData.prohibited_reason ??
-            "This item is not permitted on Proxe.",
-        },
-        { status: 403 },
-      );
-    }
 
     return NextResponse.json({
       success: true,
