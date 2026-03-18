@@ -437,7 +437,17 @@ export default function ItemDetailPage() {
     );
   if (!item) return null;
 
-  const isAvailable = item.status === "available";
+  const isAvailable = (item as any).availability_status 
+    ? (item as any).availability_status === "available" 
+    : item.status === "available";
+  
+  const availabilityLabel = (item as any).availability_status === "borrowed" 
+    ? "Borrowed" 
+    : (item as any).availability_status === "reserved" 
+      ? "Reserved" 
+      : isAvailable 
+        ? "Available" 
+        : item.status;
 
   return (
     <main className="min-h-screen pb-24">
@@ -470,9 +480,17 @@ export default function ItemDetailPage() {
               className="flex-1"
             />
             <span
-              className={`text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 ${isAvailable ? "bg-trust-high/10 text-trust-high" : "bg-inventory-100 text-inventory-500"}`}
+              className={`text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 ${
+                isAvailable 
+                  ? "bg-trust-high/10 text-trust-high" 
+                  : availabilityLabel === "Borrowed"
+                    ? "bg-red-50 text-red-600"
+                    : availabilityLabel === "Reserved"
+                      ? "bg-amber-50 text-amber-600"
+                      : "bg-inventory-100 text-inventory-500"
+              }`}
             >
-              {isAvailable ? "Available" : item.status}
+              {availabilityLabel}
             </span>
           </div>
         </div>

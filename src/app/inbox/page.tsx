@@ -47,6 +47,9 @@ const SYSTEM_MESSAGE_TYPES = [
   "return_initiated",
   "transaction_complete",
   "request_cancelled",
+  "deposit_nudge",
+  "deposit_warning",
+  "deposit_auto_cancelled",
 ];
 
 export default function InboxPage() {
@@ -600,6 +603,9 @@ export default function InboxPage() {
         request_pending: "bg-amber-50 text-amber-700 border-amber-200",
         request_expired: "bg-inventory-100 text-inventory-500 border-inventory-200",
         deposit_confirmed: "bg-green-50 text-green-700 border-green-200",
+        deposit_nudge: "bg-amber-50 text-amber-700 border-amber-200",
+        deposit_warning: "bg-red-50 text-red-700 border-red-200",
+        deposit_auto_cancelled: "bg-red-50 text-red-700 border-red-200",
         pickup_confirmed: "bg-green-50 text-green-700 border-green-200",
         pickup_partial: "bg-amber-50 text-amber-700 border-amber-200",
         return_initiated: "bg-blue-50 text-blue-700 border-blue-200",
