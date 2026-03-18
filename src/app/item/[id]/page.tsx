@@ -376,6 +376,7 @@ export default function ItemDetailPage() {
           state: "requested",
           deposit_held: item.deposit_cents,
           due_at: dueAt.toISOString(),
+          borrow_days: borrowDays,
           requested_at: new Date().toISOString(),
         })
         .select("id")
@@ -596,26 +597,28 @@ export default function ItemDetailPage() {
             <h2 className="font-display text-sm font-bold text-inventory-400 uppercase tracking-widest mb-4">
               Listed By
             </h2>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
-                  <span className="font-display font-bold text-xl text-accent">
-                    {item.owner.display_name?.[0] ?? "?"}
-                  </span>
-                </div>
-                <div>
-                  <p className="font-display font-bold text-base">
-                    {item.owner.display_name}
-                  </p>
-                  <p className="text-sm text-inventory-400">
-                    @{item.owner.username}
-                  </p>
-                  <div className="mt-2">
-                    <TrustBadge score={item.owner.trust_score} />
+            <Link href={`/profile/${item.owner.id}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
+                    <span className="font-display font-bold text-xl text-accent">
+                      {item.owner.display_name?.[0] ?? "?"}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="font-display font-bold text-base">
+                      {item.owner.display_name}
+                    </p>
+                    <p className="text-sm text-inventory-400">
+                      @{item.owner.username}
+                    </p>
+                    <div className="mt-2">
+                      <TrustBadge score={item.owner.trust_score} />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            </Link>
             {item.owner.reputation_tags?.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-inventory-100">
                 {item.owner.reputation_tags.map((tag) => (
@@ -758,19 +761,24 @@ export default function ItemDetailPage() {
               <div className="px-6 py-5">
                 {/* Quick day buttons + custom input */}
                 <div className="flex gap-2 mb-4 flex-wrap">
-                  {[1, 2, 3, 5, 7].filter(d => d <= item.max_borrow_days).map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => { setBorrowDays(d); setCustomDays(false); }}
-                      className={`px-4 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
-                        borrowDays === d && !customDays
-                          ? "bg-accent text-white"
-                          : "bg-inventory-100 text-inventory-600 hover:bg-inventory-200"
-                      }`}
-                    >
-                      {d} day{d !== 1 ? "s" : ""}
-                    </button>
-                  ))}
+                  {[1, 2, 3, 5, 7]
+                    .filter((d) => d <= item.max_borrow_days)
+                    .map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => {
+                          setBorrowDays(d);
+                          setCustomDays(false);
+                        }}
+                        className={`px-4 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
+                          borrowDays === d && !customDays
+                            ? "bg-accent text-white"
+                            : "bg-inventory-100 text-inventory-600 hover:bg-inventory-200"
+                        }`}
+                      >
+                        {d} day{d !== 1 ? "s" : ""}
+                      </button>
+                    ))}
                   <button
                     onClick={() => setCustomDays(true)}
                     className={`px-4 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
@@ -790,14 +798,18 @@ export default function ItemDetailPage() {
                       max={item.max_borrow_days}
                       value={borrowDays}
                       onChange={(e) => {
-                        const val = Math.min(Math.max(1, Number(e.target.value)), item.max_borrow_days);
+                        const val = Math.min(
+                          Math.max(1, Number(e.target.value)),
+                          item.max_borrow_days,
+                        );
                         setBorrowDays(val);
                       }}
                       className="w-20 px-3 py-2 rounded-xl border-2 border-inventory-200 focus:border-accent outline-none text-sm text-center font-display font-bold"
                       autoFocus
                     />
                     <span className="text-sm text-inventory-500">
-                      day{borrowDays !== 1 ? "s" : ""} (max {item.max_borrow_days})
+                      day{borrowDays !== 1 ? "s" : ""} (max{" "}
+                      {item.max_borrow_days})
                     </span>
                   </div>
                 )}

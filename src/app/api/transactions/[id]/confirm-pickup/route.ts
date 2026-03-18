@@ -22,7 +22,7 @@ export async function POST(
   const { data: transaction, error: txError } = await supabase
     .from("transactions")
     .select(
-      "id, item_id, borrower_id, owner_id, state, pickup_photo_url, pickup_signature"
+      "id, item_id, borrower_id, owner_id, state, pickup_confirmations, borrow_days"
     )
     .eq("id", transactionId)
     .single();
@@ -55,14 +55,11 @@ export async function POST(
     );
   }
 
-  // 5. Track confirmations using pickup_signature as JSON
-  // pickup_signature stores: { borrower_confirmed: bool, owner_confirmed: bool }
-  // We repurpose this existing column since it's USER-DEFINED type
-  // If your column is text/jsonb, parse accordingly
+  // 5. Track confirmations
   let confirmations: { borrower_confirmed: boolean; owner_confirmed: boolean };
 
   try {
-    const raw = transaction.pickup_signature;
+    const raw = transaction.pickup_confirmations;
     if (raw && typeof raw === "object") {
       confirmations = raw as any;
     } else if (raw && typeof raw === "string") {
@@ -101,13 +98,19 @@ export async function POST(
 
   // 7. Update transaction
   const updatePayload: Record<string, unknown> = {
-    pickup_signature: confirmations,
+    pickup_confirmations: confirmations,
     updated_at: now,
   };
 
   if (bothConfirmed) {
     updatePayload.state = "picked_up";
     updatePayload.picked_up_at = now;
+
+    // Recalculate due_at from pickup date + borrow_days
+    const borrowDays = transaction.borrow_days ?? 7;
+    const dueAt = new Date();
+    dueAt.setDate(dueAt.getDate() + borrowDays);
+    updatePayload.due_at = dueAt.toISOString();
   }
 
   const { error: updateError } = await supabase
@@ -134,7 +137,7 @@ export async function POST(
   // 9. Log state change
   await supabase.from("transaction_state_log").insert({
     transaction_id: transactionId,
-    from_state: bothConfirmed ? "deposit_held" : "deposit_held",
+    from_state: "deposit_held",
     to_state: bothConfirmed ? "picked_up" : "deposit_held",
     changed_by: user.id,
     change_reason: isBorrower
@@ -155,7 +158,6 @@ export async function POST(
 
   // 11. Send appropriate message
   if (bothConfirmed) {
-    // Both confirmed — send system message to both
     const { data: item } = await supabase
       .from("items")
       .select("title")
@@ -163,22 +165,23 @@ export async function POST(
       .single();
 
     const itemTitle = item?.title ?? "the item";
+    const borrowDays = transaction.borrow_days ?? 7;
 
     await supabase.from("messages").insert({
       sender_id: user.id,
       recipient_id: partnerId,
       message_type: "pickup_confirmed",
-      content: `Pickup confirmed! "${itemTitle}" is now with the borrower. The deposit hold is active until the item is returned.`,
+      content: `Pickup confirmed! "${itemTitle}" is now with the borrower for ${borrowDays} day${borrowDays !== 1 ? "s" : ""}. The deposit hold is active until the item is returned.`,
       topic: transaction.item_id,
       payload: {
         transaction_id: transactionId,
         item_id: transaction.item_id,
         item_title: itemTitle,
         picked_up_at: now,
+        borrow_days: borrowDays,
       },
     });
   } else {
-    // One side confirmed — notify the other
     const waitingFor = isBorrower ? "owner" : "borrower";
     await supabase.from("messages").insert({
       sender_id: user.id,

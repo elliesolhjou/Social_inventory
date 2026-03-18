@@ -23,6 +23,7 @@ type Item = {
   category: string;
   deposit_cents: number;
   status: string;
+  availability_status?: string;
   ai_condition: string | null;
 };
 
@@ -56,7 +57,27 @@ type HistoryTransaction = {
   };
 };
 
-type Tab = "items" | "borrowing" | "history";
+type Tab = "items" | "lending" | "borrowing" | "history";
+
+type LendingTransaction = {
+  id: string;
+  item_id: string;
+  borrower_id: string;
+  state: string;
+  due_at: string | null;
+  picked_up_at: string | null;
+  borrow_days: number | null;
+  item: {
+    title: string;
+    category: string;
+    deposit_cents: number;
+  };
+  borrower: {
+    display_name: string;
+    avatar_url: string | null;
+    unit_number: string;
+  };
+};
 
 function getDaysRemaining(dueAt: string | null): {
   text: string;
@@ -125,10 +146,12 @@ export default function MyProfilePage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<Tab>("items");
   const [myItems, setMyItems] = useState<Item[]>([]);
+  const [lending, setLending] = useState<LendingTransaction[]>([]);
   const [borrowing, setBorrowing] = useState<BorrowingTransaction[]>([]);
   const [history, setHistory] = useState<HistoryTransaction[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
   const [itemCount, setItemCount] = useState(0);
+  const [lendingCount, setLendingCount] = useState(0);
   const [borrowingCount, setBorrowingCount] = useState(0);
   const [historyCount, setHistoryCount] = useState(0);
 
@@ -194,11 +217,21 @@ export default function MyProfilePage() {
       }
 
       // Fetch counts in parallel
-      const [itemsRes, borrowingRes, historyRes] = await Promise.all([
+      const [itemsRes, lendingRes, borrowingRes, historyRes] = await Promise.all([
         supabase
           .from("items")
           .select("id", { count: "exact", head: true })
           .eq("owner_id", user.id),
+        supabase
+          .from("transactions")
+          .select("id", { count: "exact", head: true })
+          .eq("owner_id", user.id)
+          .in("state", [
+            "deposit_held",
+            "picked_up",
+            "return_submitted",
+            "inspection_pending",
+          ]),
         supabase
           .from("transactions")
           .select("id", { count: "exact", head: true })
@@ -228,6 +261,7 @@ export default function MyProfilePage() {
       ]);
 
       setItemCount(itemsRes.count ?? 0);
+      setLendingCount(lendingRes.count ?? 0);
       setBorrowingCount(borrowingRes.count ?? 0);
       setHistoryCount(historyRes.count ?? 0);
 
@@ -247,10 +281,70 @@ export default function MyProfilePage() {
       if (activeTab === "items" && myItems.length === 0) {
         const { data } = await supabase
           .from("items")
-          .select("id, title, category, deposit_cents, status, ai_condition")
+          .select("id, title, category, deposit_cents, status, ai_condition, availability_status")
           .eq("owner_id", profile.id)
           .order("created_at", { ascending: false });
         setMyItems(data ?? []);
+      }
+
+      if (activeTab === "lending" && lending.length === 0) {
+        const { data: txns } = await supabase
+          .from("transactions")
+          .select("id, item_id, borrower_id, state, due_at, picked_up_at, borrow_days")
+          .eq("owner_id", profile.id)
+          .in("state", [
+            "deposit_held",
+            "picked_up",
+            "return_submitted",
+            "inspection_pending",
+          ])
+          .order("created_at", { ascending: false });
+
+        if (txns && txns.length > 0) {
+          const itemIds = [...new Set(txns.map((t) => t.item_id))];
+          const borrowerIds = [...new Set(txns.map((t) => t.borrower_id))];
+
+          const [{ data: itemsData }, { data: borrowersData }] = await Promise.all([
+            supabase
+              .from("items")
+              .select("id, title, category, deposit_cents")
+              .in("id", itemIds),
+            supabase
+              .from("profiles")
+              .select("id, display_name, avatar_url, unit_number")
+              .in("id", borrowerIds),
+          ]);
+
+          const itemMap = Object.fromEntries(
+            (itemsData ?? []).map((i) => [i.id, i])
+          );
+          const borrowerMap = Object.fromEntries(
+            (borrowersData ?? []).map((b) => [b.id, b])
+          );
+
+          const mapped = txns.map((t) => ({
+            id: t.id,
+            item_id: t.item_id,
+            borrower_id: t.borrower_id,
+            state: t.state,
+            due_at: t.due_at,
+            picked_up_at: t.picked_up_at,
+            borrow_days: t.borrow_days,
+            item: {
+              title: itemMap[t.item_id]?.title ?? "Unknown item",
+              category: itemMap[t.item_id]?.category ?? "Other",
+              deposit_cents: itemMap[t.item_id]?.deposit_cents ?? 0,
+            },
+            borrower: {
+              display_name: borrowerMap[t.borrower_id]?.display_name ?? "Neighbor",
+              avatar_url: borrowerMap[t.borrower_id]?.avatar_url ?? null,
+              unit_number: borrowerMap[t.borrower_id]?.unit_number ?? "",
+            },
+          }));
+          setLending(mapped);
+        } else {
+          setLending([]);
+        }
       }
 
       if (activeTab === "borrowing" && borrowing.length === 0) {
@@ -269,9 +363,6 @@ export default function MyProfilePage() {
             "inspection_pending",
           ])
           .order("created_at", { ascending: false });
-
-        console.log("BORROWING ERROR:", txnError);
-        console.log("BORROWING RAW DATA:", JSON.stringify(txns));
 
         if (txns && txns.length > 0) {
           // Fetch items and owners separately
@@ -514,14 +605,20 @@ export default function MyProfilePage() {
 
         {/* ── Stats row ──────────────────────────────────────────── */}
         <div className="glass rounded-3xl p-5">
-          <div className="grid grid-cols-3 text-center">
+          <div className="grid grid-cols-4 text-center">
             <div>
               <p className="font-display font-black text-2xl text-inventory-900">
                 {itemCount}
               </p>
-              <p className="text-xs text-inventory-400 mt-0.5">Items listed</p>
+              <p className="text-xs text-inventory-400 mt-0.5">Listed</p>
             </div>
             <div className="border-x border-inventory-100">
+              <p className="font-display font-black text-2xl text-inventory-900">
+                {lendingCount}
+              </p>
+              <p className="text-xs text-inventory-400 mt-0.5">Lending</p>
+            </div>
+            <div className="border-r border-inventory-100">
               <p className="font-display font-black text-2xl text-inventory-900">
                 {borrowingCount}
               </p>
@@ -536,13 +633,14 @@ export default function MyProfilePage() {
           </div>
         </div>
 
-        {/* ── Three-tab section ──────────────────────────────────── */}
+        {/* ── Four-tab section ──────────────────────────────────── */}
         <div className="glass rounded-3xl overflow-hidden">
           {/* Tabs */}
           <div className="flex border-b border-inventory-100">
             {(
               [
                 { key: "items", label: "My Items", count: itemCount },
+                { key: "lending", label: "Lending", count: lendingCount },
                 { key: "borrowing", label: "Borrowing", count: borrowingCount },
                 { key: "history", label: "History", count: historyCount },
               ] as { key: Tab; label: string; count: number }[]
@@ -635,22 +733,177 @@ export default function MyProfilePage() {
                             </p>
                             <span
                               className={`text-xs font-medium ${
-                                item.status === "available"
+                                (item.availability_status ?? item.status) === "available"
                                   ? "text-trust-high"
-                                  : item.status === "borrowed"
+                                  : (item.availability_status ?? item.status) === "borrowed"
                                     ? "text-amber-500"
-                                    : "text-inventory-400"
+                                    : (item.availability_status ?? item.status) === "reserved"
+                                      ? "text-purple-500"
+                                      : "text-inventory-400"
                               }`}
                             >
-                              {item.status === "available"
+                              {(item.availability_status ?? item.status) === "available"
                                 ? "Available"
-                                : item.status === "borrowed"
+                                : (item.availability_status ?? item.status) === "borrowed"
                                   ? "Borrowed"
-                                  : item.status}
+                                  : (item.availability_status ?? item.status) === "reserved"
+                                    ? "Reserved"
+                                    : (item.availability_status ?? item.status)}
                             </span>
                           </div>
                         </Link>
                       ))
+                    )}
+                  </div>
+                )}
+
+                {/* ── Lending tab (items I've lent out) ────────── */}
+                {activeTab === "lending" && (
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-inventory-400 uppercase tracking-widest mb-2">
+                      Currently Lending ({lending.length})
+                    </p>
+
+                    {lending.length === 0 ? (
+                      <div className="text-center py-12">
+                        <span className="text-4xl mb-3 block">📦</span>
+                        <p className="text-inventory-500 text-sm mb-1">
+                          None of your items are lent out right now
+                        </p>
+                        <p className="text-inventory-400 text-xs">
+                          When someone borrows your item, it&apos;ll appear here
+                        </p>
+                      </div>
+                    ) : (
+                      lending.map((txn) => {
+                        const due = getDaysRemaining(txn.due_at);
+                        const stateLabels: Record<string, { label: string; color: string }> = {
+                          deposit_held: {
+                            label: "Deposit held — awaiting pickup",
+                            color: "text-purple-600 bg-purple-50",
+                          },
+                          picked_up: {
+                            label: "With borrower",
+                            color: "text-green-700 bg-green-50",
+                          },
+                          return_submitted: {
+                            label: "Return submitted — review needed",
+                            color: "text-blue-600 bg-blue-50",
+                          },
+                          inspection_pending: {
+                            label: "Inspecting return",
+                            color: "text-amber-600 bg-amber-50",
+                          },
+                        };
+                        const stateInfo = stateLabels[txn.state] ?? {
+                          label: txn.state,
+                          color: "text-inventory-500 bg-inventory-50",
+                        };
+                        const showDueDate = ["picked_up"].includes(txn.state);
+
+                        return (
+                          <div
+                            key={txn.id}
+                            className={`p-4 rounded-2xl border transition-colors ${
+                              due.overdue
+                                ? "border-red-200 bg-red-50/50"
+                                : due.urgent
+                                  ? "border-amber-200 bg-amber-50/30"
+                                  : "border-inventory-100"
+                            }`}
+                          >
+                            <div className="flex items-start gap-4">
+                              <div className="w-12 h-12 rounded-xl bg-inventory-50 flex items-center justify-center text-xl flex-shrink-0">
+                                {getCategoryEmoji(txn.item.category)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <Link href={`/item/${txn.item_id}`} className="font-display font-semibold text-sm truncate block hover:text-accent transition-colors">
+                                  {txn.item.title}
+                                </Link>
+                                <p className="text-xs text-inventory-400 mt-0.5">
+                                  Lent to{" "}
+                                  <span className="font-medium text-inventory-600">
+                                    {txn.borrower.display_name}
+                                  </span>
+                                  {txn.borrower.unit_number && (
+                                    <span> · Unit {txn.borrower.unit_number}</span>
+                                  )}
+                                </p>
+
+                                <span
+                                  className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full mt-1.5 ${stateInfo.color}`}
+                                >
+                                  {stateInfo.label}
+                                </span>
+
+                                {showDueDate && (
+                                  <div className="flex items-center gap-1.5 mt-2">
+                                    <svg
+                                      className={`w-3.5 h-3.5 ${
+                                        due.overdue
+                                          ? "text-red-500"
+                                          : due.urgent
+                                            ? "text-amber-500"
+                                            : "text-inventory-400"
+                                      }`}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                      />
+                                    </svg>
+                                    <span
+                                      className={`text-xs font-semibold ${
+                                        due.overdue
+                                          ? "text-red-600"
+                                          : due.urgent
+                                            ? "text-amber-600"
+                                            : "text-inventory-500"
+                                      }`}
+                                    >
+                                      {due.text}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {txn.borrow_days && (
+                                  <p className="text-xs text-inventory-400 mt-1">
+                                    Agreed: {txn.borrow_days} day{txn.borrow_days !== 1 ? "s" : ""} · Deposit: ${(txn.item.deposit_cents / 100).toFixed(0)}
+                                  </p>
+                                )}
+                              </div>
+
+                              {txn.state === "return_submitted" ? (
+                                <Link
+                                  href={`/inbox?with=${txn.borrower_id}`}
+                                  className="flex-shrink-0 py-2 px-4 bg-blue-600 text-white rounded-xl font-display font-bold text-xs hover:bg-blue-500 transition-colors"
+                                >
+                                  Review
+                                </Link>
+                              ) : txn.state === "picked_up" && due.overdue ? (
+                                <Link
+                                  href={`/inbox?with=${txn.borrower_id}`}
+                                  className="flex-shrink-0 py-2 px-4 bg-red-500 text-white rounded-xl font-display font-bold text-xs hover:bg-red-400 transition-colors"
+                                >
+                                  Follow up
+                                </Link>
+                              ) : (
+                                <Link
+                                  href={`/inbox?with=${txn.borrower_id}`}
+                                  className="flex-shrink-0 py-2 px-4 border border-inventory-200 text-inventory-600 rounded-xl font-display font-bold text-xs hover:border-accent hover:text-accent transition-colors"
+                                >
+                                  Message
+                                </Link>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 )}
@@ -739,9 +992,9 @@ export default function MyProfilePage() {
                                 {getCategoryEmoji(txn.item.category)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="font-display font-semibold text-sm truncate">
+                                <Link href={`/item/${txn.item_id}`} className="font-display font-semibold text-sm truncate block hover:text-accent transition-colors">
                                   {txn.item.title}
-                                </p>
+                                </Link>
                                 <p className="text-xs text-inventory-400 mt-0.5">
                                   From{" "}
                                   <span className="font-medium text-inventory-600">
@@ -908,9 +1161,10 @@ export default function MyProfilePage() {
                           : "";
 
                         return (
-                          <div
+                          <Link
                             key={txn.id}
-                            className="flex items-center gap-4 p-4 rounded-2xl border border-inventory-100"
+                            href={`/item/${txn.item_id}`}
+                            className="flex items-center gap-4 p-4 rounded-2xl border border-inventory-100 hover:border-inventory-200 transition-colors"
                           >
                             <div className="w-10 h-10 rounded-xl bg-inventory-50 flex items-center justify-center text-lg">
                               {getCategoryEmoji(txn.item.category)}
@@ -928,7 +1182,7 @@ export default function MyProfilePage() {
                             >
                               {stateInfo.label}
                             </span>
-                          </div>
+                          </Link>
                         );
                       })
                     )}
