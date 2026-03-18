@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import BorrowRequestCard from "@/components/messages/BorrowRequestCard";
 import DepositConfirmCard from "@/components/messages/DepositConfirmCard";
+import ReturnConfirmCard from "@/components/messages/ReturnConfirmCard";
 import PickupCoordinationCard from "@/components/messages/PickupCoordinationCard";
 import PickupConfirmButton from "@/components/messages/PickupConfirmButton";
 
@@ -83,7 +84,9 @@ export default function InboxPage() {
       if (profileCache[id]) return profileCache[id];
       const { data } = await supabase
         .from("profiles")
-        .select("id, display_name, username, avatar_url, unit_number, trust_score")
+        .select(
+          "id, display_name, username, avatar_url, unit_number, trust_score",
+        )
         .eq("id", id)
         .single();
       if (data) {
@@ -95,43 +98,37 @@ export default function InboxPage() {
   );
 
   // Mark messages as read
-  const markAsRead = useCallback(
-    async (partnerId: string, userId: string) => {
-      await supabase
-        .from("messages")
-        .update({ read_at: new Date().toISOString() })
-        .eq("sender_id", partnerId)
-        .eq("recipient_id", userId)
-        .is("read_at", null);
-    },
-    [],
-  );
+  const markAsRead = useCallback(async (partnerId: string, userId: string) => {
+    await supabase
+      .from("messages")
+      .update({ read_at: new Date().toISOString() })
+      .eq("sender_id", partnerId)
+      .eq("recipient_id", userId)
+      .is("read_at", null);
+  }, []);
 
   // Fetch transaction states for messages that reference transactions
-  const fetchTransactionStates = useCallback(
-    async (messages: Message[]) => {
-      const txIds = messages
-        .filter((m) => m.payload?.transaction_id)
-        .map((m) => m.payload!.transaction_id as string);
+  const fetchTransactionStates = useCallback(async (messages: Message[]) => {
+    const txIds = messages
+      .filter((m) => m.payload?.transaction_id)
+      .map((m) => m.payload!.transaction_id as string);
 
-      const uniqueIds = [...new Set(txIds)];
-      if (uniqueIds.length === 0) return;
+    const uniqueIds = [...new Set(txIds)];
+    if (uniqueIds.length === 0) return;
 
-      const { data } = await supabase
-        .from("transactions")
-        .select("id, state, owner_id")
-        .in("id", uniqueIds);
+    const { data } = await supabase
+      .from("transactions")
+      .select("id, state, owner_id")
+      .in("id", uniqueIds);
 
-      if (data) {
-        const stateMap: Record<string, { state: string; owner_id: string }> = {};
-        data.forEach((tx) => {
-          stateMap[tx.id] = { state: tx.state, owner_id: tx.owner_id };
-        });
-        setTransactionStates((prev) => ({ ...prev, ...stateMap }));
-      }
-    },
-    [],
-  );
+    if (data) {
+      const stateMap: Record<string, { state: string; owner_id: string }> = {};
+      data.forEach((tx) => {
+        stateMap[tx.id] = { state: tx.state, owner_id: tx.owner_id };
+      });
+      setTransactionStates((prev) => ({ ...prev, ...stateMap }));
+    }
+  }, []);
 
   // Handle incoming realtime message
   const handleRealtimeMessage = useCallback(
@@ -145,7 +142,8 @@ export default function InboxPage() {
       // Don't double-add messages I just sent
       if (msg.sender_id === myId) return;
 
-      const partnerId = msg.sender_id === myId ? msg.recipient_id : msg.sender_id;
+      const partnerId =
+        msg.sender_id === myId ? msg.recipient_id : msg.sender_id;
 
       // If message has a transaction ref, refresh that transaction's state
       if (msg.payload?.transaction_id) {
@@ -226,7 +224,9 @@ export default function InboxPage() {
       // Fetch own profile for pickup card unit number
       const { data: ownProfile } = await supabase
         .from("profiles")
-        .select("id, display_name, username, avatar_url, unit_number, trust_score")
+        .select(
+          "id, display_name, username, avatar_url, unit_number, trust_score",
+        )
         .eq("id", user.id)
         .single();
       if (ownProfile) setMyProfile(ownProfile);
@@ -405,23 +405,20 @@ export default function InboxPage() {
   };
 
   // Refresh transaction state after an action (called by child components)
-  const refreshTransactionState = useCallback(
-    async (transactionId: string) => {
-      const { data } = await supabase
-        .from("transactions")
-        .select("id, state, owner_id")
-        .eq("id", transactionId)
-        .single();
+  const refreshTransactionState = useCallback(async (transactionId: string) => {
+    const { data } = await supabase
+      .from("transactions")
+      .select("id, state, owner_id")
+      .eq("id", transactionId)
+      .single();
 
-      if (data) {
-        setTransactionStates((prev) => ({
-          ...prev,
-          [data.id]: { state: data.state, owner_id: data.owner_id },
-        }));
-      }
-    },
-    [],
-  );
+    if (data) {
+      setTransactionStates((prev) => ({
+        ...prev,
+        [data.id]: { state: data.state, owner_id: data.owner_id },
+      }));
+    }
+  }, []);
 
   function formatTime(ts: string) {
     const d = new Date(ts);
@@ -444,6 +441,8 @@ export default function InboxPage() {
     if (msg.message_type === "request_cancelled") return "Request cancelled";
     if (msg.message_type === "request_expired") return "Request expired";
     if (msg.message_type === "pickup_proposal") return "Pickup proposal sent";
+    if (msg.message_type === "return_submitted") return "Return submitted";
+
     return msg.content;
   }
 
@@ -460,7 +459,10 @@ export default function InboxPage() {
       // render as a styled text bubble instead of the interactive card
       if (!txId) {
         return (
-          <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+          <div
+            key={msg.id}
+            className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+          >
             <div
               className={`max-w-xs sm:max-w-sm rounded-2xl text-sm ${
                 isMine
@@ -469,13 +471,17 @@ export default function InboxPage() {
               }`}
             >
               <div className="px-4 pt-2.5 pb-1">
-                <span className={`inline-block text-[10px] font-semibold uppercase tracking-wide mb-1 ${isMine ? "text-white/70" : "text-accent"}`}>
+                <span
+                  className={`inline-block text-[10px] font-semibold uppercase tracking-wide mb-1 ${isMine ? "text-white/70" : "text-accent"}`}
+                >
                   Borrow request
                 </span>
               </div>
               <div className="px-4 pb-2.5">
                 <p className="leading-relaxed">{msg.content}</p>
-                <p className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}>
+                <p
+                  className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}
+                >
                   {formatTime(msg.created_at)}
                 </p>
               </div>
@@ -485,7 +491,10 @@ export default function InboxPage() {
       }
 
       return (
-        <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+        <div
+          key={msg.id}
+          className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+        >
           <div>
             <BorrowRequestCard
               transactionId={txId}
@@ -499,7 +508,9 @@ export default function InboxPage() {
               currentState={txState?.state ?? "requested"}
               isOwner={myId === txState?.owner_id}
             />
-            <p className={`text-[10px] mt-1 ${isMine ? "text-right" : ""} text-inventory-400`}>
+            <p
+              className={`text-[10px] mt-1 ${isMine ? "text-right" : ""} text-inventory-400`}
+            >
               {formatTime(msg.created_at)}
             </p>
           </div>
@@ -561,12 +572,18 @@ export default function InboxPage() {
 
     // ─── Pickup proposal message with confirm button ───
     if (msg.message_type === "pickup_proposal") {
-      const confirmations = (txId && transactionStates[txId])
-        ? (payload.confirmations as { borrower_confirmed: boolean; owner_confirmed: boolean } | undefined)
-        : undefined;
+      const confirmations =
+        txId && transactionStates[txId]
+          ? (payload.confirmations as
+              | { borrower_confirmed: boolean; owner_confirmed: boolean }
+              | undefined)
+          : undefined;
 
       return (
-        <div key={msg.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+        <div
+          key={msg.id}
+          className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+        >
           <div
             className={`max-w-xs sm:max-w-sm rounded-2xl text-sm ${
               isMine
@@ -575,18 +592,29 @@ export default function InboxPage() {
             }`}
           >
             <div className="px-4 py-2.5">
-              <p className="leading-relaxed whitespace-pre-line">{msg.content}</p>
-              <p className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}>
+              <p className="leading-relaxed whitespace-pre-line">
+                {msg.content}
+              </p>
+              <p
+                className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}
+              >
                 {formatTime(msg.created_at)}
               </p>
             </div>
             {txId && txState && (
-              <div className={`px-4 pb-2.5 ${isMine ? "[&_button]:bg-white/20 [&_button]:text-white [&_button]:hover:bg-white/30 [&_span]:bg-white/10 [&_span]:text-white/90 [&_span]:border-white/20 [&_p]:text-white/70" : ""}`}>
+              <div
+                className={`px-4 pb-2.5 ${isMine ? "[&_button]:bg-white/20 [&_button]:text-white [&_button]:hover:bg-white/30 [&_span]:bg-white/10 [&_span]:text-white/90 [&_span]:border-white/20 [&_p]:text-white/70" : ""}`}
+              >
                 <PickupConfirmButton
                   transactionId={txId}
                   currentUserId={myId ?? ""}
                   ownerId={txState.owner_id}
-                  confirmations={confirmations ?? { borrower_confirmed: false, owner_confirmed: false }}
+                  confirmations={
+                    confirmations ?? {
+                      borrower_confirmed: false,
+                      owner_confirmed: false,
+                    }
+                  }
                   transactionState={txState.state}
                 />
               </div>
@@ -596,12 +624,38 @@ export default function InboxPage() {
       );
     }
 
+    // ─── Return submitted → owner sees confirm card ───
+    if (msg.message_type === "return_submitted") {
+      return (
+        <div key={msg.id} className="flex flex-col items-center gap-1">
+          <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-200">
+            {msg.content}
+          </span>
+          <ReturnConfirmCard
+            transactionId={txId!}
+            itemTitle={(payload.item_title as string) ?? "Item"}
+            returnPhotoCount={
+              (payload.return_photo_ids as string[])?.length ?? 0
+            }
+            borrowerName={activeConv?.partner.display_name ?? "Borrower"}
+            currentState={txState?.state ?? "return_submitted"}
+            isOwner={myId === txState?.owner_id}
+          />
+          <p className="text-[10px] text-inventory-400">
+            {formatTime(msg.created_at)}
+          </p>
+        </div>
+      );
+    }
+
+    if (msg.message_type === "return_submitted") return "Return submitted";
     // ─── System badge messages ───
     if (SYSTEM_MESSAGE_TYPES.includes(msg.message_type)) {
       const variantMap: Record<string, string> = {
         request_declined: "bg-red-50 text-red-700 border-red-200",
         request_pending: "bg-amber-50 text-amber-700 border-amber-200",
-        request_expired: "bg-inventory-100 text-inventory-500 border-inventory-200",
+        request_expired:
+          "bg-inventory-100 text-inventory-500 border-inventory-200",
         deposit_confirmed: "bg-green-50 text-green-700 border-green-200",
         deposit_nudge: "bg-amber-50 text-amber-700 border-amber-200",
         deposit_warning: "bg-red-50 text-red-700 border-red-200",
@@ -610,11 +664,14 @@ export default function InboxPage() {
         pickup_partial: "bg-amber-50 text-amber-700 border-amber-200",
         return_initiated: "bg-blue-50 text-blue-700 border-blue-200",
         transaction_complete: "bg-green-50 text-green-700 border-green-200",
-        request_cancelled: "bg-inventory-100 text-inventory-500 border-inventory-200",
+        request_cancelled:
+          "bg-inventory-100 text-inventory-500 border-inventory-200",
       };
       return (
         <div key={msg.id} className="flex justify-center">
-          <div className={`px-3 py-1.5 rounded-lg text-xs text-center border max-w-[90%] ${variantMap[msg.message_type] ?? "bg-inventory-100 text-inventory-500 border-inventory-200"}`}>
+          <div
+            className={`px-3 py-1.5 rounded-lg text-xs text-center border max-w-[90%] ${variantMap[msg.message_type] ?? "bg-inventory-100 text-inventory-500 border-inventory-200"}`}
+          >
             {msg.content}
           </div>
         </div>
@@ -677,7 +734,10 @@ export default function InboxPage() {
           </Link>
           <h1 className="font-display font-bold text-base flex-1 flex items-center gap-2">
             Inbox
-            <span className="w-2 h-2 rounded-full bg-trust-high animate-pulse" title="Live" />
+            <span
+              className="w-2 h-2 rounded-full bg-trust-high animate-pulse"
+              title="Live"
+            />
           </h1>
           {conversations.reduce((n, c) => n + c.unreadCount, 0) > 0 && (
             <span className="px-2.5 py-1 rounded-full bg-accent text-white text-xs font-bold">
@@ -694,8 +754,8 @@ export default function InboxPage() {
             No messages yet
           </p>
           <p className="text-sm text-inventory-400 mb-6">
-            When you message a neighbor or someone messages you, it&apos;ll appear
-            here.
+            When you message a neighbor or someone messages you, it&apos;ll
+            appear here.
           </p>
           <Link
             href="/dashboard"

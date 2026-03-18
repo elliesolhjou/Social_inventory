@@ -2,6 +2,7 @@
 
 import BorrowRequestCard from "./BorrowRequestCard";
 import DepositConfirmCard from "./DepositConfirmCard";
+import ReturnConfirmCard from "./ReturnConfirmCard";
 
 interface Message {
   id: string;
@@ -73,6 +74,22 @@ export default function MessageBubble({
             depositAmountCents={(payload.deposit_amount_cents as number) ?? 0}
             currentState={transactionState ?? "approved"}
             isBorrower={currentUserId !== transactionOwnerId}
+          />
+        </div>
+      );
+
+    // ─── Borrower submitted return → owner sees confirm card ───
+    case "return_submitted":
+      return (
+        <div className="flex flex-col items-center mb-2 gap-1">
+          <SystemBadge text={message.content} variant="info" />
+          <ReturnConfirmCard
+            transactionId={payload.transaction_id as string}
+            itemTitle={(payload.item_title as string) ?? "Item"}
+            returnPhotoCount={(payload.return_photo_ids as string[])?.length ?? 0}
+            borrowerName={message.content.split(" has submitted")[0] ?? "Borrower"}
+            currentState={transactionState ?? "return_submitted"}
+            isOwner={currentUserId === transactionOwnerId}
           />
         </div>
       );
