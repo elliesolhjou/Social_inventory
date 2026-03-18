@@ -241,7 +241,7 @@ export default function Dashboard() {
             href="/"
             className="font-display text-lg font-bold tracking-tight flex-shrink-0"
           >
-            Prox - The Community Sharing Platform
+            Proxe - The Community Sharing Platform
           </Link>
           <div className="flex items-center gap-2 sm:gap-3">
             <Link

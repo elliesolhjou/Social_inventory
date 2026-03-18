@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 /**
  * VisionAgent — Magic Upload endpoint (Gemini 2.5 Pro)
  *
- * Accepts base64-encoded video frames and sends them to Google's Gemini
+ * Accepts base64-encoded image frames and sends them to Google's Gemini
  * vision API for item identification. Returns structured item metadata.
  *
  * POST /api/vision
- * Body: { frames: string[] }  (array of base64 JPEG data URIs)
+ * Body: { frames: string[] }  (array of base64 JPEG data URIs, up to 10)
  */
 
 const GEMINI_API_URL =
@@ -72,7 +72,10 @@ Guidelines for allowed items:
 - Suggested deposit should reflect item value and fragility
 - Rules should be practical (e.g. "Return cleaned" for kitchen items, "Keep in case" for electronics)
 - If multiple items visible, focus on the primary/central item
+- Multiple photos from different angles should increase your confidence — look for details visible in some photos but not others
 - If you cannot identify the item with reasonable confidence, still provide your best guess with a low confidence score`;
+
+const MAX_FRAMES = 10;
 
 export async function POST(request: NextRequest) {
   try {
@@ -99,10 +102,10 @@ export async function POST(request: NextRequest) {
     // Build the parts array for Gemini's format
     const parts: any[] = [];
 
-    // Add up to 4 frames (to keep within reasonable limits)
-    const selectedFrames = frames.slice(0, 4);
+    // Accept up to MAX_FRAMES photos
+    const selectedFrames = frames.slice(0, MAX_FRAMES);
     for (const frame of selectedFrames) {
-      // Strip data URI prefix if present
+      // Strip data URI prefix if present (handles jpeg, png, webp, etc.)
       const base64Data = frame.replace(/^data:image\/\w+;base64,/, "");
       parts.push({
         inline_data: {
@@ -113,7 +116,10 @@ export async function POST(request: NextRequest) {
     }
 
     parts.push({
-      text: `These are ${selectedFrames.length} frames captured from a short video of an item someone wants to lend to their neighbors. Analyze the item and return the structured JSON metadata. Remember: respond with ONLY valid JSON.`,
+      text:
+        selectedFrames.length === 1
+          ? `This is a photo of an item someone wants to lend to their neighbors. Analyze the item and return the structured JSON metadata. Remember: respond with ONLY valid JSON.`
+          : `These are ${selectedFrames.length} photos of an item someone wants to lend to their neighbors, taken from different angles. Analyze all photos together for the most accurate identification and condition assessment. Return the structured JSON metadata. Remember: respond with ONLY valid JSON.`,
     });
 
     // Call Gemini API

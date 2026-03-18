@@ -3,12 +3,15 @@
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import VideoCapture from "@/components/upload/VideoCapture";
+import PhotoReviewGrid from "@/components/upload/PhotoReviewGrid";
 import ItemReviewForm, {
   type ItemFormData,
 } from "@/components/upload/ItemReviewForm";
 import { createClient } from "@/lib/supabase/client";
 
-type Step = "capture" | "analyzing" | "review" | "success";
+type Step = "capture" | "photo_review" | "analyzing" | "review" | "success";
+
+const STEP_LABELS = ["Capture", "Photos", "Analyze", "Review"];
 
 export default function MagicUpload() {
   const [step, setStep] = useState<Step>("capture");
@@ -19,8 +22,35 @@ export default function MagicUpload() {
   const [createdItemId, setCreatedItemId] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState(0);
 
-  const handleFramesCaptured = useCallback(async (capturedFrames: string[]) => {
-    setFrames(capturedFrames);
+  // ── Step index for the stepper ──────────────────────────────────
+  const stepIndex =
+    step === "capture"
+      ? 0
+      : step === "photo_review"
+        ? 1
+        : step === "analyzing"
+          ? 2
+          : step === "review" || step === "success"
+            ? 3
+            : 0;
+
+  // ── Capture → go to photo review (don't call vision yet) ───────
+  const handleFramesCaptured = useCallback((capturedFrames: string[]) => {
+    setFrames((prev) => [...prev, ...capturedFrames].slice(0, 10));
+    setStep("photo_review");
+    setError(null);
+  }, []);
+
+  // ── "Add from Camera" in photo review → back to capture (keep frames) ──
+  const handleAddFromCamera = useCallback(() => {
+    setStep("capture");
+    // frames are preserved — VideoCapture will append on next capture
+  }, []);
+
+  // ── Photo review → send all frames to vision agent ─────────────
+  const handlePhotosApproved = useCallback(async () => {
+    if (frames.length === 0) return;
+
     setStep("analyzing");
     setError(null);
     setAnalysisProgress(0);
@@ -39,7 +69,7 @@ export default function MagicUpload() {
       const response = await fetch("/api/vision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames: capturedFrames }),
+        body: JSON.stringify({ frames }),
       });
 
       clearInterval(progressInterval);
@@ -57,10 +87,11 @@ export default function MagicUpload() {
     } catch (err: any) {
       clearInterval(progressInterval);
       setError(err.message || "Failed to analyze item. Please try again.");
-      setStep("capture");
+      setStep("photo_review"); // go back to photo review, not capture
     }
-  }, []);
+  }, [frames]);
 
+  // ── Publish item ───────────────────────────────────────────────
   const handlePublish = useCallback(
     async (formData: ItemFormData) => {
       setIsSubmitting(true);
@@ -69,13 +100,11 @@ export default function MagicUpload() {
       try {
         const supabase = createClient();
 
-        // ── FIX: use real logged-in user ──────────────────────────────────────
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) throw new Error("You must be signed in to publish an item.");
 
-        // Get user's building (from profile first, then fallback to first building)
         const { data: userProfile } = await supabase
           .from("profiles")
           .select("building_id")
@@ -91,7 +120,8 @@ export default function MagicUpload() {
           buildingId = buildings?.[0]?.id;
         }
 
-        if (!buildingId) throw new Error("No building found. Please complete onboarding.");
+        if (!buildingId)
+          throw new Error("No building found. Please complete onboarding.");
 
         const { data: newItem, error: insertError } = await supabase
           .from("items")
@@ -108,7 +138,7 @@ export default function MagicUpload() {
             rules: formData.rules,
             status: "available",
             times_borrowed: 0,
-            owner_id: user.id, // ← real user
+            owner_id: user.id,
             building_id: buildingId,
             metadata: {
               brand: formData.brand,
@@ -148,6 +178,7 @@ export default function MagicUpload() {
     [frames],
   );
 
+  // ── Full reset ─────────────────────────────────────────────────
   const handleRetake = useCallback(() => {
     setFrames([]);
     setItemData(null);
@@ -186,33 +217,40 @@ export default function MagicUpload() {
       </header>
 
       <div className="max-w-2xl mx-auto px-6 pt-6">
+        {/* ── Stepper (4 steps now) ─────────────────────────────── */}
         <div className="flex items-center gap-2 mb-8">
-          {["Capture", "Analyze", "Review"].map((label, i) => {
-            const stepIndex =
-              step === "capture"
-                ? 0
-                : step === "analyzing"
-                  ? 1
-                  : step === "review" || step === "success"
-                    ? 2
-                    : 0;
+          {STEP_LABELS.map((label, i) => {
             const isActive = i === stepIndex;
             const isDone = i < stepIndex;
             return (
               <div key={label} className="flex items-center gap-2 flex-1">
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isActive ? "bg-accent text-white scale-110" : isDone ? "bg-accent/20 text-accent" : "bg-inventory-100 text-inventory-400"}`}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    isActive
+                      ? "bg-accent text-white scale-110"
+                      : isDone
+                        ? "bg-accent/20 text-accent"
+                        : "bg-inventory-100 text-inventory-400"
+                  }`}
                 >
                   {isDone ? "✓" : i + 1}
                 </div>
                 <span
-                  className={`text-xs font-medium hidden sm:block ${isActive ? "text-accent" : isDone ? "text-accent/60" : "text-inventory-400"}`}
+                  className={`text-xs font-medium hidden sm:block ${
+                    isActive
+                      ? "text-accent"
+                      : isDone
+                        ? "text-accent/60"
+                        : "text-inventory-400"
+                  }`}
                 >
                   {label}
                 </span>
-                {i < 2 && (
+                {i < STEP_LABELS.length - 1 && (
                   <div
-                    className={`flex-1 h-0.5 rounded-full ${isDone ? "bg-accent/30" : "bg-inventory-100"}`}
+                    className={`flex-1 h-0.5 rounded-full ${
+                      isDone ? "bg-accent/30" : "bg-inventory-100"
+                    }`}
                   />
                 )}
               </div>
@@ -220,6 +258,7 @@ export default function MagicUpload() {
           })}
         </div>
 
+        {/* ── Error banner ──────────────────────────────────────── */}
         {error && (
           <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3">
             <svg
@@ -239,21 +278,48 @@ export default function MagicUpload() {
           </div>
         )}
 
+        {/* ── Step: Capture ─────────────────────────────────────── */}
         {step === "capture" && (
           <div className="animate-slide-up">
             <div className="mb-6">
               <h2 className="font-display text-2xl font-bold mb-1">
-                Record your item
+                {frames.length > 0
+                  ? "Add more photos"
+                  : "Record your item"}
               </h2>
               <p className="text-inventory-500 text-sm">
-                Hold your camera steady and slowly rotate the item. 5 seconds is
-                all we need.
+                {frames.length > 0
+                  ? `You have ${frames.length} photo${frames.length !== 1 ? "s" : ""}. Capture more angles or go back to review.`
+                  : "Hold your camera steady and slowly rotate the item. 5 seconds is all we need."}
               </p>
             </div>
             <VideoCapture onFramesCaptured={handleFramesCaptured} />
+
+            {/* If we already have frames, show a shortcut back to review */}
+            {frames.length > 0 && (
+              <button
+                onClick={() => setStep("photo_review")}
+                className="w-full mt-4 py-3 border-2 border-accent/30 text-accent rounded-2xl 
+                           font-display font-semibold text-sm hover:border-accent transition-colors"
+              >
+                ← Back to Photo Review ({frames.length} photo{frames.length !== 1 ? "s" : ""})
+              </button>
+            )}
           </div>
         )}
 
+        {/* ── Step: Photo Review (NEW) ──────────────────────────── */}
+        {step === "photo_review" && (
+          <PhotoReviewGrid
+            frames={frames}
+            onFramesChange={setFrames}
+            onContinue={handlePhotosApproved}
+            onAddFromCamera={handleAddFromCamera}
+            onBack={handleRetake}
+          />
+        )}
+
+        {/* ── Step: Analyzing ───────────────────────────────────── */}
         {step === "analyzing" && (
           <div className="flex flex-col items-center justify-center py-20 animate-slide-up">
             <div className="relative w-24 h-24 mb-8">
@@ -264,7 +330,7 @@ export default function MagicUpload() {
               </div>
             </div>
             <h2 className="font-display text-xl font-bold mb-2">
-              VisionAgent analyzing...
+              Miles is analyzing {frames.length} photo{frames.length !== 1 ? "s" : ""}...
             </h2>
             <p className="text-inventory-500 text-sm mb-8 text-center max-w-xs">
               Identifying item, assessing condition, writing description, and
@@ -295,6 +361,7 @@ export default function MagicUpload() {
           </div>
         )}
 
+        {/* ── Step: Review Form ─────────────────────────────────── */}
         {step === "review" && itemData && (
           <div className="animate-slide-up">
             <div className="mb-6">
@@ -315,6 +382,7 @@ export default function MagicUpload() {
           </div>
         )}
 
+        {/* ── Step: Success ─────────────────────────────────────── */}
         {step === "success" && (
           <div className="flex flex-col items-center justify-center py-20 animate-slide-up text-center">
             <div className="w-20 h-20 rounded-full bg-trust-high/10 flex items-center justify-center mb-6">
