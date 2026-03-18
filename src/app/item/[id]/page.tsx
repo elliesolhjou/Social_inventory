@@ -263,6 +263,9 @@ export default function ItemDetailPage() {
   const [borrowLoading, setBorrowLoading] = useState(false);
   const [borrowError, setBorrowError] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+  const [showBorrowPrompt, setShowBorrowPrompt] = useState(false);
+  const [borrowDays, setBorrowDays] = useState(3);
+  const [customDays, setCustomDays] = useState(false);
   const supabase = createClient();
 
   // Search navigates to dashboard with query
@@ -301,7 +304,13 @@ export default function ItemDetailPage() {
           .select("id")
           .eq("item_id", data.id)
           .eq("borrower_id", user.id)
-          .in("state", ["requested", "pending", "approved", "deposit_held", "active"])
+          .in("state", [
+            "requested",
+            "pending",
+            "approved",
+            "deposit_held",
+            "active",
+          ])
           .limit(1);
 
         if (existing && existing.length > 0) {
@@ -338,7 +347,13 @@ export default function ItemDetailPage() {
         .select("id")
         .eq("item_id", item.id)
         .eq("borrower_id", user.id)
-        .in("state", ["requested", "pending", "approved", "deposit_held", "active"])
+        .in("state", [
+          "requested",
+          "pending",
+          "approved",
+          "deposit_held",
+          "active",
+        ])
         .limit(1);
 
       if (existing && existing.length > 0) {
@@ -346,9 +361,9 @@ export default function ItemDetailPage() {
         return;
       }
 
-      // Calculate due date
+      // Calculate due date based on borrower's requested days
       const dueAt = new Date();
-      dueAt.setDate(dueAt.getDate() + (item.max_borrow_days || 7));
+      dueAt.setDate(dueAt.getDate() + borrowDays);
 
       // 1. Create transaction
       const { data: txn, error: txnError } = await supabase
@@ -384,11 +399,11 @@ export default function ItemDetailPage() {
         borrower_id: user.id,
         owner_id: item.owner.id,
         item_title: item.title,
-        item_photo_url: null, // TODO: add item photos
+        item_photo_url: null,
         borrower_display_name: borrowerProfile?.display_name ?? null,
         borrower_avatar_url: borrowerProfile?.avatar_url ?? null,
         status: "requested",
-        request_message: `I'd like to borrow your ${item.title} with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold.`,
+        request_message: `I'd like to borrow your ${item.title} for ${borrowDays} day${borrowDays !== 1 ? "s" : ""} with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold.`,
         requested_at: new Date().toISOString(),
       });
 
@@ -405,7 +420,7 @@ export default function ItemDetailPage() {
       await supabase.from("messages").insert({
         sender_id: user.id,
         recipient_id: item.owner.id,
-        content: `Hi ${item.owner.display_name}! I'd like to borrow your ${item.title}. I've submitted a borrow request with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold. Let me know if that works for you!`,
+        content: `Hi ${item.owner.display_name}! I'd like to borrow your ${item.title} for ${borrowDays} day${borrowDays !== 1 ? "s" : ""}. I've submitted a borrow request with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold. Let me know if that works for you!`,
         message_type: "borrow_request",
         topic: item.id,
         payload: {
@@ -417,10 +432,12 @@ export default function ItemDetailPage() {
           borrower_avatar_url: borrowerProfile?.avatar_url ?? null,
           deposit_amount_cents: item.deposit_cents,
           condition: item.ai_condition,
+          borrow_days: borrowDays,
         },
       });
 
       setBorrowRequested(true);
+      setShowBorrowPrompt(false);
     } catch (err: any) {
       console.error("Borrow request failed:", err);
       setBorrowError(err.message || "Failed to send borrow request.");
@@ -437,17 +454,18 @@ export default function ItemDetailPage() {
     );
   if (!item) return null;
 
-  const isAvailable = (item as any).availability_status 
-    ? (item as any).availability_status === "available" 
+  const isAvailable = (item as any).availability_status
+    ? (item as any).availability_status === "available"
     : item.status === "available";
-  
-  const availabilityLabel = (item as any).availability_status === "borrowed" 
-    ? "Borrowed" 
-    : (item as any).availability_status === "reserved" 
-      ? "Reserved" 
-      : isAvailable 
-        ? "Available" 
-        : item.status;
+
+  const availabilityLabel =
+    (item as any).availability_status === "borrowed"
+      ? "Borrowed"
+      : (item as any).availability_status === "reserved"
+        ? "Reserved"
+        : isAvailable
+          ? "Available"
+          : item.status;
 
   return (
     <main className="min-h-screen pb-24">
@@ -481,8 +499,8 @@ export default function ItemDetailPage() {
             />
             <span
               className={`text-xs px-2.5 py-1 rounded-full font-bold flex-shrink-0 ${
-                isAvailable 
-                  ? "bg-trust-high/10 text-trust-high" 
+                isAvailable
+                  ? "bg-trust-high/10 text-trust-high"
                   : availabilityLabel === "Borrowed"
                     ? "bg-red-50 text-red-600"
                     : availabilityLabel === "Reserved"
@@ -617,7 +635,9 @@ export default function ItemDetailPage() {
         {borrowError && (
           <div className="flex items-start gap-2 px-4 py-3 rounded-2xl bg-red-50 border border-red-100">
             <span className="text-red-500 text-xs mt-0.5">⚠</span>
-            <p className="text-red-600 text-xs leading-relaxed">{borrowError}</p>
+            <p className="text-red-600 text-xs leading-relaxed">
+              {borrowError}
+            </p>
           </div>
         )}
       </div>
@@ -661,7 +681,7 @@ export default function ItemDetailPage() {
                 Message
               </button>
               <button
-                onClick={handleBorrowRequest}
+                onClick={() => setShowBorrowPrompt(true)}
                 disabled={!isAvailable || borrowRequested || borrowLoading}
                 className="flex-1 py-3.5 rounded-2xl font-display font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
@@ -716,6 +736,142 @@ export default function ItemDetailPage() {
           itemTitle={item.title}
           onClose={() => setShowMessage(false)}
         />
+      )}
+
+      {showBorrowPrompt && item && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50"
+            onClick={() => setShowBorrowPrompt(false)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-6 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-sm sm:w-full animate-slide-up">
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-inventory-200">
+              <div className="px-6 pt-6 pb-4 border-b border-inventory-100">
+                <h3 className="font-display font-bold text-base">
+                  How long do you need it?
+                </h3>
+                <p className="text-xs text-inventory-400 mt-1">
+                  {item.title} · Max {item.max_borrow_days} days
+                </p>
+              </div>
+
+              <div className="px-6 py-5">
+                {/* Quick day buttons + custom input */}
+                <div className="flex gap-2 mb-4 flex-wrap">
+                  {[1, 2, 3, 5, 7].filter(d => d <= item.max_borrow_days).map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => { setBorrowDays(d); setCustomDays(false); }}
+                      className={`px-4 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
+                        borrowDays === d && !customDays
+                          ? "bg-accent text-white"
+                          : "bg-inventory-100 text-inventory-600 hover:bg-inventory-200"
+                      }`}
+                    >
+                      {d} day{d !== 1 ? "s" : ""}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setCustomDays(true)}
+                    className={`px-4 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
+                      customDays
+                        ? "bg-accent text-white"
+                        : "bg-inventory-100 text-inventory-600 hover:bg-inventory-200"
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
+                {customDays && (
+                  <div className="flex items-center gap-3 mb-4">
+                    <input
+                      type="number"
+                      min={1}
+                      max={item.max_borrow_days}
+                      value={borrowDays}
+                      onChange={(e) => {
+                        const val = Math.min(Math.max(1, Number(e.target.value)), item.max_borrow_days);
+                        setBorrowDays(val);
+                      }}
+                      className="w-20 px-3 py-2 rounded-xl border-2 border-inventory-200 focus:border-accent outline-none text-sm text-center font-display font-bold"
+                      autoFocus
+                    />
+                    <span className="text-sm text-inventory-500">
+                      day{borrowDays !== 1 ? "s" : ""} (max {item.max_borrow_days})
+                    </span>
+                  </div>
+                )}
+                {/* Custom slider for more precision */}
+                {item.max_borrow_days > 7 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-bold text-inventory-400 uppercase tracking-widest">
+                        Or choose
+                      </label>
+                      <span className="text-sm font-display font-bold text-accent">
+                        {borrowDays} day{borrowDays !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={item.max_borrow_days}
+                      value={borrowDays}
+                      onChange={(e) => setBorrowDays(Number(e.target.value))}
+                      className="w-full accent-accent"
+                    />
+                    <div className="flex justify-between text-[10px] text-inventory-400 mt-1">
+                      <span>1 day</span>
+                      <span>{item.max_borrow_days} days</span>
+                    </div>
+                  </div>
+                )}
+                {/* Summary */}
+                <div className="p-3 rounded-2xl bg-inventory-50 mb-4">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-inventory-500">Duration</span>
+                    <span className="font-display font-bold">
+                      {borrowDays} day{borrowDays !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-inventory-500">Deposit hold</span>
+                    <span className="font-display font-bold">
+                      ${(item.deposit_cents / 100).toFixed(0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-inventory-500">Fee</span>
+                    <span className="font-display font-bold text-trust-high">
+                      Free
+                    </span>
+                  </div>
+                </div>
+                {/* Confirm button */}
+                <button
+                  onClick={handleBorrowRequest}
+                  disabled={borrowLoading}
+                  className="w-full py-3.5 bg-accent text-white rounded-2xl font-display font-bold text-sm hover:bg-accent-dark transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {borrowLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Sending request...
+                    </>
+                  ) : (
+                    <>Send borrow request</>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowBorrowPrompt(false)}
+                  className="w-full mt-2 py-2 text-xs text-inventory-400 hover:text-inventory-600 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </main>
   );
