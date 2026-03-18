@@ -20,6 +20,7 @@ type Item = {
   rules: string;
   status: string;
   times_borrowed: number;
+  building_id: string;
   metadata: {
     brand?: string;
     model?: string;
@@ -47,7 +48,7 @@ function MessagePopup({
   onClose: () => void;
 }) {
   const [message, setMessage] = useState(
-    `Hi ${owner.display_name}! I'm interested in borrowing your ${itemTitle}. Is it available?`,
+    `Hi ${owner.display_name}! I'm interested in borrowing your ${itemTitle}. Please let me know if I can borrow it?`,
   );
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -259,6 +260,8 @@ export default function ItemDetailPage() {
   const [loading, setLoading] = useState(true);
   const [showMessage, setShowMessage] = useState(false);
   const [borrowRequested, setBorrowRequested] = useState(false);
+  const [borrowLoading, setBorrowLoading] = useState(false);
+  const [borrowError, setBorrowError] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const supabase = createClient();
 
@@ -284,15 +287,147 @@ export default function ItemDetailPage() {
         return;
       }
       setItem(data);
+
       // Check if logged-in user is the owner
       const {
         data: { user },
       } = await supabase.auth.getUser();
       setIsOwner(user?.id === data.owner?.id);
+
+      // Check if user already has a pending/active request for this item
+      if (user && user.id !== data.owner?.id) {
+        const { data: existing } = await supabase
+          .from("transactions")
+          .select("id")
+          .eq("item_id", data.id)
+          .eq("borrower_id", user.id)
+          .in("state", ["requested", "pending", "approved", "deposit_held", "active"])
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          setBorrowRequested(true);
+        }
+      }
+
       setLoading(false);
     };
     fetchItem();
   }, [params.id]);
+
+  // ── Borrow request handler ────────────────────────────────────────────────
+  const handleBorrowRequest = async () => {
+    if (!item || borrowRequested || borrowLoading) return;
+    setBorrowLoading(true);
+    setBorrowError(null);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/auth");
+        return;
+      }
+
+      // Prevent borrowing your own item
+      if (user.id === item.owner?.id) return;
+
+      // Check for duplicate request
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("item_id", item.id)
+        .eq("borrower_id", user.id)
+        .in("state", ["requested", "pending", "approved", "deposit_held", "active"])
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        setBorrowRequested(true);
+        return;
+      }
+
+      // Calculate due date
+      const dueAt = new Date();
+      dueAt.setDate(dueAt.getDate() + (item.max_borrow_days || 7));
+
+      // 1. Create transaction
+      const { data: txn, error: txnError } = await supabase
+        .from("transactions")
+        .insert({
+          item_id: item.id,
+          borrower_id: user.id,
+          owner_id: item.owner.id,
+          building_id: item.building_id,
+          state: "requested",
+          deposit_held: item.deposit_cents,
+          due_at: dueAt.toISOString(),
+          requested_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+
+      if (txnError) throw txnError;
+
+      // 2. Get borrower profile for the message
+      const { data: borrowerProfile } = await supabase
+        .from("profiles")
+        .select("display_name, unit_number, avatar_url")
+        .eq("id", user.id)
+        .single();
+
+      const borrowerName = borrowerProfile?.display_name ?? "A neighbor";
+
+      // 3. Create borrow_requests row (for the requests dashboard)
+      await supabase.from("borrow_requests").insert({
+        transaction_id: txn.id,
+        item_id: item.id,
+        borrower_id: user.id,
+        owner_id: item.owner.id,
+        item_title: item.title,
+        item_photo_url: null, // TODO: add item photos
+        borrower_display_name: borrowerProfile?.display_name ?? null,
+        borrower_avatar_url: borrowerProfile?.avatar_url ?? null,
+        status: "requested",
+        request_message: `I'd like to borrow your ${item.title} with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold.`,
+        requested_at: new Date().toISOString(),
+      });
+
+      // 4. Log state change
+      await supabase.from("transaction_state_log").insert({
+        transaction_id: txn.id,
+        from_state: null,
+        to_state: "requested",
+        changed_by: user.id,
+        change_reason: "borrower_requested",
+      });
+
+      // 5. Send notification message to owner WITH payload
+      await supabase.from("messages").insert({
+        sender_id: user.id,
+        recipient_id: item.owner.id,
+        content: `Hi ${item.owner.display_name}! I'd like to borrow your ${item.title}. I've submitted a borrow request with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold. Let me know if that works for you!`,
+        message_type: "borrow_request",
+        topic: item.id,
+        payload: {
+          transaction_id: txn.id,
+          item_id: item.id,
+          item_title: item.title,
+          item_photo_url: null,
+          borrower_name: borrowerName,
+          borrower_avatar_url: borrowerProfile?.avatar_url ?? null,
+          deposit_amount_cents: item.deposit_cents,
+          condition: item.ai_condition,
+        },
+      });
+
+      setBorrowRequested(true);
+    } catch (err: any) {
+      console.error("Borrow request failed:", err);
+      setBorrowError(err.message || "Failed to send borrow request.");
+    } finally {
+      setBorrowLoading(false);
+    }
+  };
 
   if (loading)
     return (
@@ -426,7 +561,7 @@ export default function ItemDetailPage() {
               Listed By
             </h2>
             <div className="flex items-center justify-between">
-              <Link href={`/profile/${item.owner.id}`} className="flex items-center gap-4 hover:opacity-80 transition-opacity">
+              <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0">
                   <span className="font-display font-bold text-xl text-accent">
                     {item.owner.display_name?.[0] ?? "?"}
@@ -437,13 +572,13 @@ export default function ItemDetailPage() {
                     {item.owner.display_name}
                   </p>
                   <p className="text-sm text-inventory-400">
-                    @{item.owner.username} ·
+                    @{item.owner.username}
                   </p>
                   <div className="mt-2">
                     <TrustBadge score={item.owner.trust_score} />
                   </div>
                 </div>
-              </Link>
+              </div>
             </div>
             {item.owner.reputation_tags?.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-inventory-100">
@@ -457,6 +592,14 @@ export default function ItemDetailPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Borrow error */}
+        {borrowError && (
+          <div className="flex items-start gap-2 px-4 py-3 rounded-2xl bg-red-50 border border-red-100">
+            <span className="text-red-500 text-xs mt-0.5">⚠</span>
+            <p className="text-red-600 text-xs leading-relaxed">{borrowError}</p>
           </div>
         )}
       </div>
@@ -500,8 +643,8 @@ export default function ItemDetailPage() {
                 Message
               </button>
               <button
-                onClick={() => setBorrowRequested(true)}
-                disabled={!isAvailable || borrowRequested}
+                onClick={handleBorrowRequest}
+                disabled={!isAvailable || borrowRequested || borrowLoading}
                 className="flex-1 py-3.5 rounded-2xl font-display font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   background: borrowRequested
@@ -515,7 +658,12 @@ export default function ItemDetailPage() {
                       : "var(--color-inventory-500)",
                 }}
               >
-                {borrowRequested ? (
+                {borrowLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Requesting...
+                  </>
+                ) : borrowRequested ? (
                   <>✓ Request Sent</>
                 ) : isAvailable ? (
                   <>

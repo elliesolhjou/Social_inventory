@@ -203,7 +203,15 @@ export default function MyProfilePage() {
           .from("transactions")
           .select("id", { count: "exact", head: true })
           .eq("borrower_id", user.id)
-          .in("state", ["active", "approved"]),
+          .in("state", [
+            "requested",
+            "pending",
+            "approved",
+            "deposit_held",
+            "picked_up",
+            "return_submitted",
+            "inspection_pending",
+          ]),
         supabase
           .from("transactions")
           .select("id", { count: "exact", head: true })
@@ -214,6 +222,8 @@ export default function MyProfilePage() {
             "auto_released",
             "resolved",
             "cancelled",
+            "declined",
+            "expired",
           ]),
       ]);
 
@@ -244,23 +254,49 @@ export default function MyProfilePage() {
       }
 
       if (activeTab === "borrowing" && borrowing.length === 0) {
-        const { data } = await supabase
+        // Fetch transactions without joins (avoids FK ambiguity issues)
+        const { data: txns, error: txnError } = await supabase
           .from("transactions")
-          .select(
-            `
-            id, item_id, owner_id, state, due_at, picked_up_at,
-            items:item_id ( title, category, deposit_cents ),
-            profiles:owner_id ( display_name, avatar_url )
-          `,
-          )
+          .select("id, item_id, owner_id, state, due_at, picked_up_at")
           .eq("borrower_id", profile.id)
-          .in("state", ["active", "approved"])
-          .order("due_at", { ascending: true });
+          .in("state", [
+            "requested",
+            "pending",
+            "approved",
+            "deposit_held",
+            "picked_up",
+            "return_submitted",
+            "inspection_pending",
+          ])
+          .order("created_at", { ascending: false });
 
-        const mapped = (data ?? []).map((t: any) => {
-          const item = Array.isArray(t.items) ? t.items[0] : t.items;
-          const owner = Array.isArray(t.profiles) ? t.profiles[0] : t.profiles;
-          return {
+        console.log("BORROWING ERROR:", txnError);
+        console.log("BORROWING RAW DATA:", JSON.stringify(txns));
+
+        if (txns && txns.length > 0) {
+          // Fetch items and owners separately
+          const itemIds = [...new Set(txns.map((t) => t.item_id))];
+          const ownerIds = [...new Set(txns.map((t) => t.owner_id))];
+
+          const [{ data: itemsData }, { data: ownersData }] = await Promise.all([
+            supabase
+              .from("items")
+              .select("id, title, category, deposit_cents")
+              .in("id", itemIds),
+            supabase
+              .from("profiles")
+              .select("id, display_name, avatar_url")
+              .in("id", ownerIds),
+          ]);
+
+          const itemMap = Object.fromEntries(
+            (itemsData ?? []).map((i) => [i.id, i])
+          );
+          const ownerMap = Object.fromEntries(
+            (ownersData ?? []).map((o) => [o.id, o])
+          );
+
+          const mapped = txns.map((t) => ({
             id: t.id,
             item_id: t.item_id,
             owner_id: t.owner_id,
@@ -268,28 +304,25 @@ export default function MyProfilePage() {
             due_at: t.due_at,
             picked_up_at: t.picked_up_at,
             item: {
-              title: item?.title ?? "Unknown item",
-              category: item?.category ?? "Other",
-              deposit_cents: item?.deposit_cents ?? 0,
+              title: itemMap[t.item_id]?.title ?? "Unknown item",
+              category: itemMap[t.item_id]?.category ?? "Other",
+              deposit_cents: itemMap[t.item_id]?.deposit_cents ?? 0,
             },
             owner: {
-              display_name: owner?.display_name ?? "Unknown",
-              avatar_url: owner?.avatar_url ?? null,
+              display_name: ownerMap[t.owner_id]?.display_name ?? "Neighbor",
+              avatar_url: ownerMap[t.owner_id]?.avatar_url ?? null,
             },
-          };
-        });
-        setBorrowing(mapped);
+          }));
+          setBorrowing(mapped);
+        } else {
+          setBorrowing([]);
+        }
       }
 
       if (activeTab === "history" && history.length === 0) {
-        const { data } = await supabase
+        const { data: txns } = await supabase
           .from("transactions")
-          .select(
-            `
-            id, item_id, state, returned_at, created_at,
-            items:item_id ( title, category )
-          `,
-          )
+          .select("id, item_id, state, returned_at, created_at")
           .eq("borrower_id", profile.id)
           .in("state", [
             "completed",
@@ -297,25 +330,38 @@ export default function MyProfilePage() {
             "auto_released",
             "resolved",
             "cancelled",
+            "declined",
+            "expired",
           ])
           .order("created_at", { ascending: false })
           .limit(50);
 
-        const mapped = (data ?? []).map((t: any) => {
-          const item = Array.isArray(t.items) ? t.items[0] : t.items;
-          return {
+        if (txns && txns.length > 0) {
+          const itemIds = [...new Set(txns.map((t) => t.item_id))];
+          const { data: itemsData } = await supabase
+            .from("items")
+            .select("id, title, category")
+            .in("id", itemIds);
+
+          const itemMap = Object.fromEntries(
+            (itemsData ?? []).map((i) => [i.id, i])
+          );
+
+          const mapped = txns.map((t) => ({
             id: t.id,
             item_id: t.item_id,
             state: t.state,
             returned_at: t.returned_at,
             created_at: t.created_at,
             item: {
-              title: item?.title ?? "Unknown item",
-              category: item?.category ?? "Other",
+              title: itemMap[t.item_id]?.title ?? "Unknown item",
+              category: itemMap[t.item_id]?.category ?? "Other",
             },
-          };
-        });
-        setHistory(mapped);
+          }));
+          setHistory(mapped);
+        } else {
+          setHistory([]);
+        }
       }
 
       setTabLoading(false);
@@ -623,12 +669,60 @@ export default function MyProfilePage() {
                           Nothing borrowed right now
                         </p>
                         <p className="text-inventory-400 text-xs">
-                          Browse your building's inventory to find something
+                          Browse your building&apos;s inventory to find
+                          something
                         </p>
                       </div>
                     ) : (
                       borrowing.map((txn) => {
                         const due = getDaysRemaining(txn.due_at);
+                        const stateLabels: Record<
+                          string,
+                          { label: string; color: string }
+                        > = {
+                          requested: {
+                            label: "Waiting for response",
+                            color: "text-blue-600 bg-blue-50",
+                          },
+                          pending: {
+                            label: "Owner is considering",
+                            color: "text-amber-600 bg-amber-50",
+                          },
+                          approved: {
+                            label: "Confirm deposit",
+                            color: "text-teal-700 bg-teal-50",
+                          },
+                          deposit_held: {
+                            label: "Deposit held — coordinate pickup",
+                            color: "text-purple-600 bg-purple-50",
+                          },
+                          picked_up: {
+                            label: "With you now",
+                            color: "text-green-700 bg-green-50",
+                          },
+                          active: {
+                            color: "text-green-700 bg-green-50",
+                          },
+                          return_submitted: {
+                            label: "Return in progress",
+                            color: "text-blue-600 bg-blue-50",
+                          },
+                          inspection_pending: {
+                            label: "Lender inspecting",
+                            color: "text-amber-600 bg-amber-50",
+                          },
+                        };
+                        const stateInfo = stateLabels[txn.state] ?? {
+                          label: txn.state,
+                          color: "text-inventory-500 bg-inventory-50",
+                        };
+                        const showReturnButton = [
+                          "picked_up",
+                        ].includes(txn.state);
+                        const showDueDate = [
+                          "picked_up",
+                          "deposit_held",
+                        ].includes(txn.state);
                         return (
                           <div
                             key={txn.id}
@@ -655,39 +749,48 @@ export default function MyProfilePage() {
                                   </span>
                                 </p>
 
-                                {/* Due date countdown */}
-                                <div className="flex items-center gap-1.5 mt-2">
-                                  <svg
-                                    className={`w-3.5 h-3.5 ${
-                                      due.overdue
-                                        ? "text-red-500"
-                                        : due.urgent
-                                          ? "text-amber-500"
-                                          : "text-inventory-400"
-                                    }`}
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                  </svg>
-                                  <span
-                                    className={`text-xs font-semibold ${
-                                      due.overdue
-                                        ? "text-red-600"
-                                        : due.urgent
-                                          ? "text-amber-600"
-                                          : "text-inventory-500"
-                                    }`}
-                                  >
-                                    {due.text}
-                                  </span>
-                                </div>
+                                {/* State badge */}
+                                <span
+                                  className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full mt-1.5 ${stateInfo.color}`}
+                                >
+                                  {stateInfo.label}
+                                </span>
+
+                                {/* Due date countdown (only when relevant) */}
+                                {showDueDate && (
+                                  <div className="flex items-center gap-1.5 mt-2">
+                                    <svg
+                                      className={`w-3.5 h-3.5 ${
+                                        due.overdue
+                                          ? "text-red-500"
+                                          : due.urgent
+                                            ? "text-amber-500"
+                                            : "text-inventory-400"
+                                      }`}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                      />
+                                    </svg>
+                                    <span
+                                      className={`text-xs font-semibold ${
+                                        due.overdue
+                                          ? "text-red-600"
+                                          : due.urgent
+                                            ? "text-amber-600"
+                                            : "text-inventory-500"
+                                      }`}
+                                    >
+                                      {due.text}
+                                    </span>
+                                  </div>
+                                )}
 
                                 {/* Deposit info */}
                                 <p className="text-xs text-inventory-400 mt-1">
@@ -698,26 +801,42 @@ export default function MyProfilePage() {
                                 </p>
                               </div>
 
-                              {/* Return Now button */}
-                              <Link
-                                href={`/return/${txn.id}`}
-                                className="flex-shrink-0 py-2 px-4 bg-accent text-white rounded-xl font-display font-bold text-xs hover:bg-accent-dark transition-colors flex items-center gap-1.5"
-                              >
-                                <svg
-                                  className="w-3.5 h-3.5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
+                              {/* Return Now button (only for picked_up/active) */}
+                              {showReturnButton ? (
+                                <Link
+                                  href={`/return/${txn.id}`}
+                                  className="flex-shrink-0 py-2 px-4 bg-accent text-white rounded-xl font-display font-bold text-xs hover:bg-accent-dark transition-colors flex items-center gap-1.5"
                                 >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
-                                  />
-                                </svg>
-                                Return Now
-                              </Link>
+                                  <svg
+                                    className="w-3.5 h-3.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+                                    />
+                                  </svg>
+                                  Return Now
+                                </Link>
+                              ) : txn.state === "approved" ? (
+                                <Link
+                                  href="/inbox"
+                                  className="flex-shrink-0 py-2 px-4 bg-teal-700 text-white rounded-xl font-display font-bold text-xs hover:bg-teal-600 transition-colors"
+                                >
+                                  Pay Deposit
+                                </Link>
+                              ) : txn.state === "deposit_held" ? (
+                                <Link
+                                  href="/inbox"
+                                  className="flex-shrink-0 py-2 px-4 bg-purple-600 text-white rounded-xl font-display font-bold text-xs hover:bg-purple-500 transition-colors"
+                                >
+                                  Coordinate
+                                </Link>
+                              ) : null}
                             </div>
                           </div>
                         );
@@ -764,6 +883,14 @@ export default function MyProfilePage() {
                           },
                           cancelled: {
                             label: "Cancelled",
+                            color: "text-inventory-400",
+                          },
+                          declined: {
+                            label: "Declined",
+                            color: "text-red-400",
+                          },
+                          expired: {
+                            label: "Expired",
                             color: "text-inventory-400",
                           },
                         };
