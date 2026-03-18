@@ -314,106 +314,120 @@ export default function NotificationsPage() {
             ════════════════════════════════════════════ */}
         {tab === "messages" && (
           <>
-            {/* Received / Sent sub-tabs */}
-            <div className="flex rounded-2xl bg-inventory-100 p-1 mb-4">
-              {(["received", "sent"] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setMsgFilter(f)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
-                    msgFilter === f
-                      ? "bg-white shadow-sm text-inventory-900"
-                      : "text-inventory-500 hover:text-inventory-700"
-                  }`}
-                >
-                  {f === "received" ? "📥 Received" : "📤 Sent"}
-                  {f === "received" && unreadMsgCount > 0 && (
-                    <span className="ml-1.5 text-xs bg-accent text-white px-1.5 py-0.5 rounded-full font-bold">
-                      {unreadMsgCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
 
             {(() => {
-              const filtered = messages.filter((m) =>
-                msgFilter === "received"
-                  ? m.recipient_id === myId
-                  : m.sender_id === myId
-              );
-              const person = (m: MessageNotif) =>
-                msgFilter === "received" ? m.sender : m.recipient;
+              // Group messages by conversation partner (like inbox)
+              const partnerMap = new Map<
+                string,
+                { partner: MessageNotif["sender"]; lastMessage: MessageNotif; unreadCount: number }
+              >();
 
-              if (filtered.length === 0)
+              messages.forEach((m) => {
+                const partnerId =
+                  m.sender_id === myId ? m.recipient_id : m.sender_id;
+                const partner = m.sender_id === myId ? m.recipient : m.sender;
+
+                if (!partnerMap.has(partnerId)) {
+                  partnerMap.set(partnerId, {
+                    partner,
+                    lastMessage: m,
+                    unreadCount:
+                      m.recipient_id === myId && !m.read_at ? 1 : 0,
+                  });
+                } else {
+                  const existing = partnerMap.get(partnerId)!;
+                  // Messages are ordered desc, so first one is latest
+                  if (m.recipient_id === myId && !m.read_at) {
+                    existing.unreadCount += 1;
+                  }
+                }
+              });
+
+              const conversations = Array.from(partnerMap.values()).sort(
+                (a, b) =>
+                  new Date(b.lastMessage.created_at).getTime() -
+                  new Date(a.lastMessage.created_at).getTime()
+              );
+
+              if (conversations.length === 0)
                 return (
                   <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <span className="text-5xl mb-4">
-                      {msgFilter === "received" ? "📥" : "📤"}
-                    </span>
+                    <span className="text-5xl mb-4">💬</span>
                     <p className="font-display font-bold text-inventory-700 mb-2">
-                      {msgFilter === "received"
-                        ? "No messages received yet"
-                        : "No messages sent yet"}
+                      No conversations yet
                     </p>
                     <p className="text-sm text-inventory-400 mb-6">
-                      {msgFilter === "received"
-                        ? "When neighbors message you, they'll appear here."
-                        : "Message a neighbor from any item page."}
+                      When you message a neighbor or someone messages you,
+                      it&apos;ll appear here.
                     </p>
+                    <Link
+                      href="/dashboard"
+                      className="px-5 py-2.5 bg-accent text-white rounded-xl font-display font-semibold text-sm"
+                    >
+                      Browse Items →
+                    </Link>
                   </div>
                 );
 
-              return filtered.map((msg) => {
-                const p = person(msg);
-                return (
-                  <Link
-                    key={msg.id}
-                    href={`/inbox?with=${p?.id}`}
-                    className={`glass rounded-2xl p-4 flex items-start gap-3 card-hover block ${
-                      msgFilter === "received" && !msg.read_at
-                        ? "border-l-4 border-l-accent"
-                        : ""
-                    }`}
-                  >
-                    <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                      {p?.avatar_url ? (
-                        <img
-                          src={p.avatar_url}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <span className="font-bold text-accent text-sm">
-                          {p?.display_name?.[0] ?? "?"}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-display font-bold text-sm">
-                            {p?.display_name}
-                          </p>
-                          <span className="text-xs text-inventory-400">
-                            Unit {p?.unit_number}
-                          </span>
+              return (
+                <>
+                  <p className="text-xs font-bold text-inventory-400 uppercase tracking-widest mb-1">
+                    Conversations ({conversations.length})
+                  </p>
+                  {conversations.map((conv) => {
+                    const p = conv.partner;
+                    const msg = conv.lastMessage;
+                    return (
+                      <Link
+                        key={p?.id ?? msg.id}
+                        href={`/inbox?with=${p?.id}`}
+                        className={`glass rounded-2xl p-4 flex items-start gap-3 card-hover block ${
+                          conv.unreadCount > 0
+                            ? "border-l-4 border-l-accent"
+                            : ""
+                        }`}
+                      >
+                        <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                          {p?.avatar_url ? (
+                            <img
+                              src={p.avatar_url}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="font-bold text-accent text-sm">
+                              {p?.display_name?.[0] ?? "?"}
+                            </span>
+                          )}
                         </div>
-                        <span className="text-xs text-inventory-400 flex-shrink-0">
-                          {formatTime(msg.created_at)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-inventory-600 truncate">
-                        {messagePreview(msg)}
-                      </p>
-                      {msgFilter === "received" && !msg.read_at && (
-                        <span className="inline-block mt-1.5 text-xs bg-accent/10 text-accent font-bold px-2 py-0.5 rounded-full">
-                          New
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                );
-              });
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-display font-bold text-sm">
+                                {p?.display_name}
+                              </p>
+                              <span className="text-xs text-inventory-400">
+                                Unit {p?.unit_number}
+                              </span>
+                            </div>
+                            <span className="text-xs text-inventory-400 flex-shrink-0">
+                              {formatTime(msg.created_at)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-inventory-600 truncate">
+                            {msg.sender_id === myId ? "You: " : ""}
+                            {messagePreview(msg)}
+                          </p>
+                          {conv.unreadCount > 0 && (
+                            <span className="inline-block mt-1.5 text-xs bg-accent text-white font-bold px-2 py-0.5 rounded-full">
+                              {conv.unreadCount} new
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </>
+              );
             })()}
           </>
         )}
