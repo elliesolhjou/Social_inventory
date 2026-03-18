@@ -68,8 +68,8 @@ export default function ReturnPage() {
           return;
         }
 
-        // Must be in a returnable state
-        if (!["active", "approved"].includes(data.state)) {
+        // Must be in picked_up state
+        if (data.state !== "picked_up") {
           setError(
             `This transaction is currently "${data.state}" and cannot accept return photos.`
           );
@@ -103,7 +103,7 @@ export default function ReturnPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactionId]);
 
-  // ── Handle approved photos → upload + update transaction state ─────────────
+  // ── Handle approved photos → upload to storage, then call API route ───────
 
   const handlePhotosApproved = useCallback(
     async (photos: CapturedPhoto[]) => {
@@ -118,21 +118,12 @@ export default function ReturnPage() {
         } = await supabase.auth.getUser();
         if (!user) throw new Error("Not signed in.");
 
-        const photoRecords: {
-          transaction_id: string;
-          submitted_by: string;
-          photo_url: string;
-          photo_type: string;
-          capture_method: string;
-          captured_at: string;
-          device_metadata: object;
-          display_order: number;
-        }[] = [];
+        // Step 1: Upload photos to Supabase Storage
+        const photoUrls: string[] = [];
 
-        // Upload each photo to Supabase Storage
         for (let i = 0; i < photos.length; i++) {
           const photo = photos[i];
-          setUploadProgress(((i + 1) / (photos.length + 1)) * 80);
+          setUploadProgress(((i + 1) / (photos.length + 1)) * 70);
 
           // Convert data URL to blob
           const response = await fetch(photo.dataUrl);
@@ -149,52 +140,30 @@ export default function ReturnPage() {
 
           if (uploadError) throw uploadError;
 
-          // Get the URL (private bucket, so use createSignedUrl or store path)
-          const {
-            data: { publicUrl },
-          } = supabase.storage.from("return-photos").getPublicUrl(filePath);
-
-          photoRecords.push({
-            transaction_id: transaction.id,
-            submitted_by: user.id,
-            photo_url: filePath, // store the path, not public URL (private bucket)
-            photo_type: "borrower_return",
-            capture_method: "camera",
-            captured_at: photo.capturedAt,
-            device_metadata: photo.deviceMetadata,
-            display_order: i,
-          });
+          // Store the path (private bucket)
+          photoUrls.push(filePath);
         }
 
-        setUploadProgress(85);
+        setUploadProgress(75);
 
-        // Insert photo records
-        const { error: insertError } = await supabase
-          .from("return_photos")
-          .insert(photoRecords);
-
-        if (insertError) throw insertError;
+        // Step 2: Call the submit-return API route
+        // This handles: transaction_photos insert, damage_assessments creation,
+        // state transition, state log, and owner notification
+        const res = await fetch(
+          `/api/transactions/${transaction.id}/submit-return`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ photo_urls: photoUrls }),
+          }
+        );
 
         setUploadProgress(90);
 
-        // Update transaction state → return_submitted
-        const now = new Date().toISOString();
-        const inspectionHours = 24; // configurable per transaction later
-        const deadline = new Date(
-          Date.now() + inspectionHours * 60 * 60 * 1000
-        ).toISOString();
-
-        const { error: updateError } = await supabase
-          .from("transactions")
-          .update({
-            state: "return_submitted",
-            return_submitted_at: now,
-            inspection_deadline: deadline,
-            inspection_window_hours: inspectionHours,
-          })
-          .eq("id", transaction.id);
-
-        if (updateError) throw updateError;
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed to submit return");
+        }
 
         setUploadProgress(100);
         await new Promise((r) => setTimeout(r, 400));
@@ -308,7 +277,7 @@ export default function ReturnPage() {
               <span className="text-blue-500 text-sm mt-0.5">📸</span>
               <p className="text-blue-700 text-xs leading-relaxed">
                 <span className="font-semibold">Camera only.</span> Return
-                photos must be taken right now to verify the item's condition at
+                photos must be taken right now to verify the item&#39;s condition at
                 time of return. Gallery uploads are not allowed.
               </p>
             </div>
@@ -349,11 +318,11 @@ export default function ReturnPage() {
               </div>
               <div className="flex justify-between mt-2 text-xs text-inventory-400">
                 <span>
-                  {uploadProgress < 80
+                  {uploadProgress < 70
                     ? "Uploading photos..."
                     : uploadProgress < 90
-                      ? "Saving records..."
-                      : "Updating transaction..."}
+                      ? "Processing return..."
+                      : "Finalizing..."}
                 </span>
                 <span className="font-mono">
                   {Math.min(Math.round(uploadProgress), 100)}%
@@ -380,7 +349,7 @@ export default function ReturnPage() {
               <p className="text-inventory-600 text-sm">
                 The owner has{" "}
                 <strong className="text-inventory-900">24 hours</strong> to
-                inspect the item and submit their own photos. If they don't
+                inspect the item and submit their own photos. If they don&#39;t
                 respond, your deposit will be automatically released.
               </p>
             </div>
