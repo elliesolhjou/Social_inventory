@@ -31,8 +31,12 @@ export async function GET(
     }
 
     // 3. Check payment status
-    if (session.payment_status !== "paid") {
-      console.error("Payment not completed:", session.payment_status);
+    const pi = typeof session.payment_intent === "string"
+    ? await stripe.paymentIntents.retrieve(session.payment_intent)
+    : session.payment_intent;
+
+    if (pi?.status !== "requires_capture") {
+      console.error("PaymentIntent not authorized:", pi?.status);
       return NextResponse.redirect(new URL("/inbox", request.url));
     }
 
