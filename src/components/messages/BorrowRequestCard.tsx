@@ -131,15 +131,7 @@ export default function BorrowRequestCard({
         >
           {loading === "decline" ? "..." : "Can't lend"}
         </button>
-        <button
-          onClick={() => handleAction("pending")}
-          disabled={loading !== null}
-          className="flex-1 py-1.5 px-2 rounded-lg text-xs font-medium
-                     bg-amber-50 text-amber-800 border border-amber-300
-                     hover:bg-amber-100 disabled:opacity-50 transition-colors"
-        >
-          {loading === "pending" ? "..." : "Thinking..."}
-        </button>
+
       </div>
     </div>
   );
