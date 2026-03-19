@@ -328,6 +328,16 @@ export default function ReturnConfirmCard({
               evidence_type: "V3",
               video_base64: base64,
               duration_seconds: 10,
+              device_metadata: {
+                captured_at: new Date().toISOString(),
+                device_timestamp_ms: Date.now(),
+                user_agent: navigator.userAgent,
+                platform: navigator.platform,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                screen_width: screen.width,
+                screen_height: screen.height,
+                online: navigator.onLine,
+              },
             }),
           }
         );

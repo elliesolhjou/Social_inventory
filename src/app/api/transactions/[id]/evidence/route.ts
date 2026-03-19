@@ -27,7 +27,7 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { evidence_type, video_base64, duration_seconds } = body;
+  const { evidence_type, video_base64, duration_seconds, device_metadata } = body;
 
   if (!evidence_type || !["V1", "V2", "V3"].includes(evidence_type)) {
     return NextResponse.json(
@@ -125,6 +125,7 @@ export async function POST(
       evidence_type,
       video_url: urlData.publicUrl,
       duration_seconds: duration_seconds ?? null,
+      device_metadata: device_metadata ?? null,
     })
     .select("id, evidence_type, video_url, captured_at")
     .single();
