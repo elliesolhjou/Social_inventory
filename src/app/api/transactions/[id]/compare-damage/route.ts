@@ -113,6 +113,13 @@ export async function POST(
     }
   }
 
+  // Helper: construct full Supabase Storage URL from relative path
+  const storageBaseUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public`;
+  function fullUrl(path: string, bucket: string = "return-photos"): string {
+    if (path.startsWith("http")) return path;
+    return `${storageBaseUrl}/${bucket}/${path}`;
+  }
+
   // Fallback after images: return photos from transaction_photos table
   if (afterImages.length === 0) {
     const { data: returnPhotos } = await supabaseAdmin
@@ -126,7 +133,7 @@ export async function POST(
     if (returnPhotos && returnPhotos.length > 0) {
       for (const photo of returnPhotos) {
         try {
-          const res = await fetch(photo.photo_url);
+          const res = await fetch(fullUrl(photo.photo_url));
           const buf = await res.arrayBuffer();
           afterImages.push(Buffer.from(buf).toString("base64"));
         } catch { /* skip */ }
@@ -147,7 +154,7 @@ export async function POST(
     if (baselinePhotos && baselinePhotos.length > 0) {
       for (const photo of baselinePhotos) {
         try {
-          const res = await fetch(photo.photo_url);
+          const res = await fetch(fullUrl(photo.photo_url));
           const buf = await res.arrayBuffer();
           beforeImages.push(Buffer.from(buf).toString("base64"));
         } catch { /* skip */ }
