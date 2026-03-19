@@ -3,6 +3,11 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getAdaptiveThreshold, applyAdaptiveThreshold } from "@/lib/adaptive_thresholds";
+import {
+  buildDamageComparisonPrompt,
+  buildTaskDescription,
+  buildDeviceMetadataContext,
+} from "@/lib/prompts/damage_comparison";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -171,56 +176,54 @@ export async function POST(
   }
 
   // Determine comparison mode
-  let comparisonMode = "full"; // before vs after
+  let comparisonMode: "full" | "after_only" | "before_only" = "full";
   if (beforeImages.length === 0) comparisonMode = "after_only";
   if (afterImages.length === 0) comparisonMode = "before_only";
 
-  // Build Gemini prompt
+  // Build prompt using extracted prompt module (src/lib/prompts/damage_comparison.ts)
   const checklistContext = item.condition_checklist_json
     ? `\nOwner's condition certification at listing time:\n${JSON.stringify((item.condition_checklist_json as Record<string, unknown>).answers ?? [])}`
     : "";
 
   const sourceLabel = v1Evidence ? "PICKUP SCAN (V1) — borrower's video at pickup" : "LISTING PHOTOS — item when first listed";
 
-  let taskDescription = "";
-  if (comparisonMode === "full") {
-    taskDescription = `Compare the BEFORE photos (${sourceLabel}) with the AFTER photos (item after return from borrower). Identify any new damage, missing parts, or condition changes.`;
-  } else if (comparisonMode === "after_only") {
-    taskDescription = `Assess the condition of the item in these AFTER photos (item after return from borrower). No before photos are available. Look for any visible damage, wear, or issues. Note that without before photos, confidence should be lower.`;
-  } else {
-    taskDescription = `These are BEFORE photos of the item. No after photos are available yet. Describe the current condition for baseline documentation.`;
-  }
-
   // Get adaptive threshold for this item's category + condition
   const itemCategory = (item.ai_category as string) ?? "general";
   const itemCondition = null; // Could come from item.ai_condition if available
   const threshold = getAdaptiveThreshold(itemCategory, itemCondition);
 
-  const prompt = `You are a damage assessment AI for Proxe, a peer-to-peer lending platform.
+  // Fetch device metadata from transaction_photos for context
+  const { data: beforePhotoMeta } = await supabaseAdmin
+    .from("transaction_photos")
+    .select("device_metadata")
+    .eq("transaction_id", transactionId)
+    .in("photo_type", ["listing_baseline", "pickup_borrower", "pickup_owner"])
+    .not("device_metadata", "is", null)
+    .limit(1);
 
-ITEM: "${item.title}"
-CATEGORY: ${threshold.category}
-${checklistContext}
+  const { data: afterPhotoMeta } = await supabaseAdmin
+    .from("transaction_photos")
+    .select("device_metadata")
+    .eq("transaction_id", transactionId)
+    .in("photo_type", ["return", "return_borrower", "return_owner"])
+    .not("device_metadata", "is", null)
+    .limit(1);
 
-TASK: ${taskDescription}
+  const deviceMetadataContext = buildDeviceMetadataContext(
+    beforePhotoMeta?.map((p) => p.device_metadata as Record<string, unknown>),
+    afterPhotoMeta?.map((p) => p.device_metadata as Record<string, unknown>)
+  );
 
-RULES:
-- Only flag CLEAR, VISIBLE differences or damage.
-- For this item category (${threshold.category}), normal wear includes: "${threshold.normal_wear_description}" — do NOT flag these as damage.
-- If you cannot clearly see damage or the photos are ambiguous, set confidence below 70 and recommend needs_human_review.
-- Be specific about WHAT changed and WHERE on the item.
-- Be fair to both parties.
-- If only one set of photos is available, assess what you can see but lower your confidence.
+  const taskDescription = buildTaskDescription(comparisonMode, sourceLabel);
 
-Respond ONLY in JSON, no markdown, no backticks:
-{
-  "damage_detected": boolean,
-  "confidence": number (0-100),
-  "summary": "1-2 sentence plain English summary",
-  "findings": [{"component": "string", "issue": "string", "severity": "none|minor|moderate|severe"}],
-  "recommendation": "release_deposit|capture_full|capture_partial|needs_human_review",
-  "recommended_capture_percent": number or null
-}`;
+  const prompt = buildDamageComparisonPrompt({
+    itemTitle: item.title as string,
+    category: threshold.category,
+    normalWearDescription: threshold.normal_wear_description,
+    taskDescription,
+    checklistContext,
+    deviceMetadataContext,
+  });
 
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
