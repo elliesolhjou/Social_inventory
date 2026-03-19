@@ -76,7 +76,10 @@ export default function InboxPage() {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const activeConvRef = useRef<Conversation | null>(null);
   const supabase = createClient();
-  const { triggerParse } = useLogisticsParser();
+  const { triggerParse } = useLogisticsParser(() => {
+    // Refresh conversation when Miles sends a suggestion
+    setTimeout(() => window.location.reload(), 500);
+  });
 
   // Keep ref in sync so realtime callback sees latest state
   useEffect(() => {
@@ -409,26 +412,26 @@ export default function InboxPage() {
     );
 
     // Trigger Miles to parse for logistics agreement
-    if (msg) {
-      console.log("MILES DEBUG: transactionStates =", JSON.stringify(transactionStates));
+    // if (msg) {
+    //   console.log("MILES DEBUG: transactionStates =", JSON.stringify(transactionStates));
       
-      // Find transaction ID from conversation messages (more reliable than state lookup)
-      const txIdFromMessages = activeConv?.messages
-        .filter((m) => m.payload?.transaction_id)
-        .map((m) => m.payload!.transaction_id as string)
-        .pop();
+    //   // Find transaction ID from conversation messages (more reliable than state lookup)
+    //   const txIdFromMessages = activeConv?.messages
+    //     .filter((m) => m.payload?.transaction_id)
+    //     .map((m) => m.payload!.transaction_id as string)
+    //     .pop();
       
-      const activeTxId = txIdFromMessages 
-        ?? Object.entries(transactionStates).find(
-          ([, tx]) => ["approved", "deposit_held"].includes(tx.state)
-        )?.[0];
+    //   const activeTxId = txIdFromMessages 
+    //     ?? Object.entries(transactionStates).find(
+    //       ([, tx]) => ["approved", "deposit_held"].includes(tx.state)
+    //     )?.[0];
       
-      console.log("MILES DEBUG: activeTxId =", activeTxId);
+    //   console.log("MILES DEBUG: activeTxId =", activeTxId);
       
-      if (activeTxId) {
-        triggerParse(activeTxId);
-      }
-    }
+    //   if (activeTxId) {
+    //     triggerParse(activeTxId);
+    //   }
+    // }
   };
 
   // Refresh transaction state after an action (called by child components)
@@ -468,7 +471,7 @@ export default function InboxPage() {
     if (msg.message_type === "request_cancelled") return "Request cancelled";
     if (msg.message_type === "request_expired") return "Request expired";
     if (msg.message_type === "pickup_proposal") return "Pickup proposal sent";
-    if (msg.message_type === "pickup_suggestion") return "Miles suggested pickup details";
+    // if (msg.message_type === "pickup_suggestion") return "Miles suggested pickup details";
     if (msg.message_type === "logistics_confirmed") return "Pickup details locked in";
     if (msg.message_type === "logistics_partial") return "Pickup details — waiting for confirm";
     if (msg.message_type === "return_submitted") return "Return submitted";
