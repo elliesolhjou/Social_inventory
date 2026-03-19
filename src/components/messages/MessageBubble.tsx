@@ -5,6 +5,7 @@ import DepositConfirmCard from "./DepositConfirmCard";
 import PickupConfirmedCard from "./PickupConfirmedCard";
 import ReturnConfirmCard from "./ReturnConfirmCard";
 import PickupSuggestionCard from "./PickupSuggestionCard";
+import PickupCard from "./PickupCard";
 
 interface Message {
   id: string;
@@ -144,9 +145,25 @@ export default function MessageBubble({
     case "request_expired":
       return <SystemBadge text={message.content} variant="muted" />;
 
-    case "deposit_confirmed":
-      return <SystemBadge text={message.content} variant="success" />;
-
+    case "deposit_confirmed": {
+      const txId = (payload.transaction_id as string) ?? "";
+      const itemName = (payload.item_title as string) ?? "Item";
+      return (
+        <div className="flex flex-col items-center mb-2 gap-2">
+          <div className="max-w-[90%] px-3 py-1.5 rounded-lg text-xs text-center border bg-green-50 text-green-700 border-green-200">
+            {message.content}
+          </div>
+          <PickupCard
+            transactionId={txId}
+            itemTitle={itemName}
+            currentState={transactionState ?? "deposit_held"}
+            currentUserId={currentUserId}
+            ownerId={transactionOwnerId ?? ""}
+            borrowerId={transactionBorrowerId ?? ""}
+          />
+        </div>
+      );
+    }
     case "pickup_confirmed": {
       const txId = (payload.transaction_id as string) ?? "";
       return (

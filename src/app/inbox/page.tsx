@@ -12,7 +12,7 @@ import PickupCoordinationCard from "@/components/messages/PickupCoordinationCard
 import PickupConfirmButton from "@/components/messages/PickupConfirmButton";
 import PickupSuggestionCard from "@/components/messages/PickupSuggestionCard";
 import { useLogisticsParser } from "@/hooks/useLogisticsParser";
-
+import PickupCard from "@/components/messages/PickupCard";
 type Message = {
   id: string;
   sender_id: string;
@@ -574,20 +574,26 @@ export default function InboxPage() {
       );
     }
 
-    // ─── Deposit confirmed → system badge (Miles handles logistics now) ───
+    // ─── Deposit confirmed → show PickupCard with photo/video + confirm ───
     if (msg.message_type === "deposit_confirmed") {
+      const txId = (payload.transaction_id as string) ?? "";
+      const itemName = (payload.item_title as string) ?? "Item";
       return (
-        <div key={msg.id} className="flex flex-col items-center gap-1">
+        <div key={msg.id} className="flex flex-col items-center gap-2">
           <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs border border-green-200">
             {msg.content}
           </span>
-          <p className="text-[10px] text-inventory-400">
-            {formatTime(msg.created_at)}
-          </p>
+          <PickupCard
+            transactionId={txId}
+            itemTitle={itemName}
+            currentState={txId && transactionStates[txId] ? transactionStates[txId].state : "deposit_held"}
+            currentUserId={myId}
+            ownerId={txId && transactionStates[txId] ? transactionStates[txId].owner_id : ""}
+            borrowerId={txId && transactionStates[txId] && transactionStates[txId].owner_id !== myId ? myId : activeConv?.partner.id ?? ""}
+          />
         </div>
       );
     }
-
     // ─── Pickup proposal message with confirm button ───
     if (msg.message_type === "pickup_proposal") {
       const confirmations =
