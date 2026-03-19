@@ -2,6 +2,7 @@
 
 import BorrowRequestCard from "./BorrowRequestCard";
 import DepositConfirmCard from "./DepositConfirmCard";
+import PickupConfirmedCard from "./PickupConfirmedCard";
 import ReturnConfirmCard from "./ReturnConfirmCard";
 import PickupSuggestionCard from "./PickupSuggestionCard";
 
@@ -41,7 +42,9 @@ export default function MessageBubble({
     // ─── Borrow request (lender sees action buttons) ───
     case "borrow_request":
       return (
-        <div className={`flex ${isMine ? "justify-end" : "justify-start"} mb-2`}>
+        <div
+          className={`flex ${isMine ? "justify-end" : "justify-start"} mb-2`}
+        >
           <div>
             {!isMine && (
               <p className="text-[11px] text-muted-foreground mb-1">
@@ -90,8 +93,12 @@ export default function MessageBubble({
           <ReturnConfirmCard
             transactionId={payload.transaction_id as string}
             itemTitle={(payload.item_title as string) ?? "Item"}
-            returnPhotoCount={(payload.return_photo_ids as string[])?.length ?? 0}
-            borrowerName={message.content.split(" has submitted")[0] ?? "Borrower"}
+            returnPhotoCount={
+              (payload.return_photo_ids as string[])?.length ?? 0
+            }
+            borrowerName={
+              message.content.split(" has submitted")[0] ?? "Borrower"
+            }
             currentState={transactionState ?? "return_submitted"}
             isOwner={currentUserId === transactionOwnerId}
           />
@@ -140,8 +147,16 @@ export default function MessageBubble({
     case "deposit_confirmed":
       return <SystemBadge text={message.content} variant="success" />;
 
-    case "pickup_confirmed":
-      return <SystemBadge text={message.content} variant="success" />;
+    case "pickup_confirmed": {
+      const txId = (payload.transaction_id as string) ?? "";
+      return (
+        <PickupConfirmedCard
+          message={message.content}
+          transactionId={txId}
+          isBorrower={currentUserId === transactionBorrowerId}
+        />
+      );
+    }
 
     case "return_initiated":
       return <SystemBadge text={message.content} variant="info" />;
@@ -155,12 +170,15 @@ export default function MessageBubble({
     // ─── Pickup proposal (from PickupCoordinationCard — still supported) ───
     case "pickup_proposal":
       return (
-        <div className={`flex ${isMine ? "justify-end" : "justify-start"} mb-1.5`}>
+        <div
+          className={`flex ${isMine ? "justify-end" : "justify-start"} mb-1.5`}
+        >
           <div
             className={`max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed
-              ${isMine
-                ? "bg-blue-100 text-blue-900 rounded-br-sm"
-                : "bg-muted text-foreground rounded-bl-sm"
+              ${
+                isMine
+                  ? "bg-blue-100 text-blue-900 rounded-br-sm"
+                  : "bg-muted text-foreground rounded-bl-sm"
               }`}
           >
             <p className="whitespace-pre-line">{message.content}</p>
