@@ -104,8 +104,7 @@ export default function MagicUpload() {
             ai_description: formData.ai_description,
             category: formData.category,
             subcategory: formData.subcategory,
-            condition: formData.condition,
-            deposit_cents: formData.suggested_deposit_cents,
+            ai_condition: formData.condition,            deposit_cents: formData.suggested_deposit_cents,
             max_borrow_days: formData.max_borrow_days,
             rules: formData.rules,
             status: "available",
@@ -128,6 +127,7 @@ export default function MagicUpload() {
         // ── NEW: Generate CLIP embedding (Fig. 5, Step 503) ────────────
         // Fire-and-forget — don't block the publish UX
         if (newItem?.id && frames.length > 0) {
+            console.log("Frame size:", frames[0].length, "chars (~", Math.round(frames[0].length * 0.75 / 1024), "KB)");
           fetch(`/api/items/${newItem.id}/embed`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -138,20 +138,20 @@ export default function MagicUpload() {
         }
         // ── END NEW ────────────────────────────────────────────────────
 
-        // Log agent action
-        await supabase
-          .from("agent_logs")
-          .insert({
-            agent: "VisionAgent",
-            action: "magic_upload",
-            payload: {
-              item_id: newItem?.id,
-              confidence: formData.confidence,
-              frames_analyzed: frames.length,
-            },
-            building_id: building?.id,
-          })
-          .then(() => {}); // fire and forget
+        // // Log agent action
+        // await supabase
+        //   .from("agent_logs")
+        //   .insert({
+        //     agent: "VisionAgent",
+        //     action: "magic_upload",
+        //     payload: {
+        //       item_id: newItem?.id,
+        //       confidence: formData.confidence,
+        //       frames_analyzed: frames.length,
+        //     },
+        //     // building_id: building?.id,
+        //   })
+        //   .then(() => {}); // fire and forget
 
         setCreatedItemId(newItem?.id ?? null);
         setStep("success");
