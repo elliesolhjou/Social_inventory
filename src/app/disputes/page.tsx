@@ -54,6 +54,16 @@ interface Profile {
   dispute_history_json: Record<string, unknown> | null;
 }
 
+interface Photo {
+  id: string;
+  photo_type: string;
+  photo_url: string;
+  full_url: string;
+  submitted_by: string;
+  display_order: number;
+  captured_at: string;
+}
+
 export default function DisputesPage() {
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +73,7 @@ export default function DisputesPage() {
     transaction: Transaction;
     item: Item;
     evidence: Evidence[];
+    photos: Photo[];
     profiles: Profile[];
   } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -219,11 +230,82 @@ export default function DisputesPage() {
                 </p>
               </div>
 
-              {/* Evidence viewer */}
+              {/* Evidence viewer (videos) */}
               <DisputeEvidenceViewer
                 evidence={disputeDetails.evidence}
                 conditionChecklist={disputeDetails.dispute.condition_checklist_snapshot as any}
               />
+
+              {/* Transaction Photos (return + baseline) */}
+              {disputeDetails.photos && disputeDetails.photos.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-display font-bold text-lg text-inventory-900">
+                    Photos
+                  </h3>
+
+                  {/* Return photos (borrower) */}
+                  {(() => {
+                    const returnPhotos = disputeDetails.photos.filter((p) => p.photo_type === "return");
+                    const baselinePhotos = disputeDetails.photos.filter((p) => p.photo_type === "listing_baseline");
+                    const borrowerName = disputeDetails.profiles.find((p) => p.id === disputeDetails.transaction.borrower_id)?.display_name ?? "Borrower";
+                    const ownerName = disputeDetails.profiles.find((p) => p.id === disputeDetails.transaction.owner_id)?.display_name ?? "Owner";
+
+                    return (
+                      <>
+                        {returnPhotos.length > 0 && (
+                          <div className="rounded-2xl border border-inventory-200 overflow-hidden">
+                            <div className="px-4 py-3 bg-blue-50 flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-bold text-blue-900">Return Photos</p>
+                                <p className="text-xs text-blue-600">Submitted by {borrowerName} at return</p>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium">
+                                {returnPhotos.length} photo{returnPhotos.length !== 1 ? "s" : ""}
+                              </span>
+                            </div>
+                            <div className="p-3 grid grid-cols-2 gap-2">
+                              {returnPhotos.map((photo) => (
+                                <a key={photo.id} href={photo.full_url} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={photo.full_url}
+                                    alt={`Return photo ${photo.display_order + 1}`}
+                                    className="w-full aspect-square object-cover rounded-xl hover:opacity-80 transition-opacity cursor-zoom-in"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {baselinePhotos.length > 0 && (
+                          <div className="rounded-2xl border border-inventory-200 overflow-hidden">
+                            <div className="px-4 py-3 bg-amber-50 flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-bold text-amber-900">Listing Baseline Photos</p>
+                                <p className="text-xs text-amber-600">Item condition at time of listing by {ownerName}</p>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 text-xs font-medium">
+                                {baselinePhotos.length} photo{baselinePhotos.length !== 1 ? "s" : ""}
+                              </span>
+                            </div>
+                            <div className="p-3 grid grid-cols-2 gap-2">
+                              {baselinePhotos.map((photo) => (
+                                <a key={photo.id} href={photo.full_url} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={photo.full_url}
+                                    alt={`Baseline photo ${photo.display_order + 1}`}
+                                    className="w-full aspect-square object-cover rounded-xl hover:opacity-80 transition-opacity cursor-zoom-in"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* AI Damage Analysis */}
               {["filed", "under_review"].includes(disputeDetails.dispute.state) && (
