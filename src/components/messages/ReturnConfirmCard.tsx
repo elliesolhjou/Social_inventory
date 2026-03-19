@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import VideoCapture from "@/components/transactions/VideoCapture";
+import DisputeFileForm from "@/components/disputes/DisputeFileForm";
 
 interface ReturnConfirmCardProps {
   transactionId: string;
@@ -52,7 +53,7 @@ export default function ReturnConfirmCard({
 }: ReturnConfirmCardProps) {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [phase, setPhase] = useState<"receipt" | "inspect" | "v3_capture" | "done">("receipt");
+  const [phase, setPhase] = useState<"receipt" | "inspect" | "v3_capture" | "dispute_form" | "done">("receipt");
   const [v3Uploaded, setV3Uploaded] = useState(false);
   const [deadline, setDeadline] = useState<string | null>(initialDeadline ?? null);
 
@@ -344,9 +345,8 @@ export default function ReturnConfirmCard({
       }
     };
 
-    const handleFileDispute = async () => {
-      // Redirect to dispute filing — the DisputeFileForm handles the rest
-      window.location.href = `/dispute/file?transaction=${transactionId}`;
+    const handleFileDispute = () => {
+      setPhase("dispute_form");
     };
 
     const handleBackToInspect = () => {
@@ -421,6 +421,23 @@ export default function ReturnConfirmCard({
             </button>
           </>
         )}
+      </div>
+    );
+  }
+
+  // ── Owner: Phase 4 — Inline dispute form ──
+  if (phase === "dispute_form") {
+    return (
+      <div className="max-w-[340px]">
+        <DisputeFileForm
+          transactionId={transactionId}
+          hasV3={true}
+          onDisputeFiled={() => {
+            setPhase("done");
+            window.location.reload();
+          }}
+          onCancel={() => setPhase("inspect")}
+        />
       </div>
     );
   }
