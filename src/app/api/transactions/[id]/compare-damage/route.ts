@@ -280,6 +280,35 @@ Respond ONLY in JSON, no markdown, no backticks:
       .update({ ai_damage_report: fullReport })
       .eq("id", v3Evidence.id);
 
+    // Patent Step 405: Show AI result to both parties
+    const recLabel =
+      thresholdResult.final_recommendation === "release_deposit"
+        ? "No damage detected — recommending deposit release."
+        : thresholdResult.final_recommendation === "needs_human_review"
+          ? "Inconclusive — flagged for manual review."
+          : "Damage detected — recommending deposit capture.";
+
+    const aiMessage = `AI Damage Analysis for "${item.title}": ${fullReport.summary} (${fullReport.confidence}% confidence). ${recLabel}`;
+
+    for (const recipientId of [transaction.owner_id, transaction.borrower_id]) {
+      await supabaseAdmin.from("messages").insert({
+        sender_id: transaction.owner_id,
+        recipient_id: recipientId,
+        message_type: "ai_damage_report",
+        content: aiMessage,
+        topic: transaction.item_id,
+        payload: {
+          transaction_id: transactionId,
+          assessment_summary: fullReport.summary,
+          confidence: fullReport.confidence,
+          damage_detected: fullReport.damage_detected,
+          final_recommendation: thresholdResult.final_recommendation,
+          auto_resolved: thresholdResult.auto_resolved,
+          category: threshold.category,
+        },
+      });
+    }
+
     return NextResponse.json({ success: true, assessment: fullReport });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "AI comparison failed";
