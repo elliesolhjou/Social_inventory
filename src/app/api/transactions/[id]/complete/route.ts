@@ -3,19 +3,20 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-04-30.basil",
-});
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Create clients inside function to guarantee env vars are loaded
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: "2025-04-30.basil",
+  });
+
   const supabase = await createServerSupabase();
   const { id: transactionId } = await params;
 
@@ -28,15 +29,20 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Use service role to bypass RLS
   const { data: transaction, error: txError } = await supabaseAdmin
     .from("transactions")
-    .select("id, item_id, borrower_id, owner_id, state, payment_intent_id, deposit_cents")
+    .select("id, item_id, borrower_id, owner_id, state, payment_intent_id")
     .eq("id", transactionId)
     .single();
 
   if (txError || !transaction) {
-    return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
+    return NextResponse.json(
+      {
+        error: "Transaction not found",
+        debug: { txError, transactionId, hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL, hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY },
+      },
+      { status: 404 }
+    );
   }
 
   if (transaction.owner_id !== user.id) {
@@ -53,7 +59,6 @@ export async function POST(
     );
   }
 
-  // Release Stripe deposit hold
   if (transaction.payment_intent_id) {
     try {
       const pi = await stripe.paymentIntents.retrieve(transaction.payment_intent_id);
@@ -71,7 +76,6 @@ export async function POST(
 
   const now = new Date().toISOString();
 
-  // Transition to completed
   const { error: updateError } = await supabaseAdmin
     .from("transactions")
     .update({
@@ -88,13 +92,11 @@ export async function POST(
     );
   }
 
-  // Update item availability back to available
   await supabaseAdmin
     .from("items")
     .update({ availability_status: "available", updated_at: now })
     .eq("id", transaction.item_id);
 
-  // Log state change
   await supabaseAdmin.from("transaction_state_log").insert({
     transaction_id: transactionId,
     from_state: "return_submitted",
@@ -103,7 +105,6 @@ export async function POST(
     change_reason: "owner_confirmed_no_damage",
   });
 
-  // Get names and item title for notifications
   const { data: ownerProfile } = await supabaseAdmin
     .from("profiles")
     .select("display_name")
@@ -114,17 +115,16 @@ export async function POST(
 
   const { data: item } = await supabaseAdmin
     .from("items")
-    .select("title")
+    .select("title, deposit_cents")
     .eq("id", transaction.item_id)
     .single();
 
   const itemTitle = item?.title ?? "the item";
 
-  const depositDollars = transaction.deposit_cents
-    ? `$${(transaction.deposit_cents / 100).toFixed(2)}`
+  const depositDollars = item?.deposit_cents
+    ? `$${((item as any)?.deposit_cents / 100).toFixed(2)}`
     : "Your deposit";
 
-  // Notify borrower
   await supabaseAdmin.from("messages").insert({
     sender_id: user.id,
     recipient_id: transaction.borrower_id,
@@ -140,7 +140,6 @@ export async function POST(
     },
   });
 
-  // Notify owner
   await supabaseAdmin.from("messages").insert({
     sender_id: user.id,
     recipient_id: transaction.owner_id,
