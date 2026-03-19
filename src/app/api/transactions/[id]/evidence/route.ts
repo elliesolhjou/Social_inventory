@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
+
+// Service role client for Storage uploads (bypasses RLS)
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 // ---------------------------------------------------------------------------
 // POST: Upload video evidence (V1, V2, or V3) for a transaction
@@ -87,11 +94,11 @@ export async function POST(
     );
   }
 
-  // Upload video to Supabase Storage
+  // Upload video to Supabase Storage using service role
   const filename = `${transactionId}/${evidence_type}_${Date.now()}.webm`;
   const videoBuffer = Buffer.from(video_base64, "base64");
 
-  const { error: uploadError } = await supabase.storage
+  const { error: uploadError } = await supabaseAdmin.storage
     .from("evidence-videos")
     .upload(filename, videoBuffer, {
       contentType: "video/webm",
@@ -105,12 +112,12 @@ export async function POST(
     );
   }
 
-  const { data: urlData } = supabase.storage
+  const { data: urlData } = supabaseAdmin.storage
     .from("evidence-videos")
     .getPublicUrl(filename);
 
-  // Insert evidence record
-  const { data: evidence, error: insertError } = await supabase
+  // Insert evidence record using service role (bypasses RLS for insert)
+  const { data: evidence, error: insertError } = await supabaseAdmin
     .from("transaction_evidence")
     .insert({
       transaction_id: transactionId,
@@ -123,7 +130,6 @@ export async function POST(
     .single();
 
   if (insertError) {
-    // Unique constraint → duplicate
     if (insertError.code === "23505") {
       return NextResponse.json(
         { error: `${evidence_type} evidence already exists for this transaction` },
@@ -157,7 +163,6 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Verify user is a participant
   const { data: transaction } = await supabase
     .from("transactions")
     .select("borrower_id, owner_id")
