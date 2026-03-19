@@ -7,11 +7,8 @@ export type CaptureMode = "upload" | "V1" | "V2" | "V3";
 interface VideoCaptureProps {
   onFramesCaptured: (frames: string[]) => void;
   onRecordingStateChange?: (recording: boolean) => void;
-  /** Raw video blob for evidence upload to Supabase Storage */
   onVideoBlob?: (blob: Blob) => void;
-  /** Called when user taps "Skip" in evidence modes */
   onSkip?: () => void;
-  /** Capture mode: 'upload' = Magic Upload (default), 'V1'|'V2'|'V3' = evidence */
   mode?: CaptureMode;
 }
 
@@ -20,7 +17,7 @@ const MODE_CONFIG: Record<
   {
     title: string;
     subtitle: string;
-    duration: number;
+    maxDuration: number;
     allowPhoto: boolean;
     allowUpload: boolean;
     showSkip: boolean;
@@ -29,33 +26,31 @@ const MODE_CONFIG: Record<
   upload: {
     title: "Record your item",
     subtitle: "Hold your camera steady and slowly rotate the item. 5 seconds is all we need.",
-    duration: 5,
+    maxDuration: 5,
     allowPhoto: true,
     allowUpload: true,
     showSkip: false,
   },
   V1: {
     title: "Quick Scan — Protect Yourself",
-    subtitle:
-      "Record a 10-second video of the item before you take it. If there's a dispute later, this is your proof.",
-    duration: 10,
+    subtitle: "Record a video of the item before you take it. Tap stop when you're done.",
+    maxDuration: 30,
     allowPhoto: false,
     allowUpload: false,
     showSkip: true,
   },
   V2: {
     title: "Record Handback",
-    subtitle: "Quick video of the item as you return it.",
-    duration: 10,
+    subtitle: "Quick video of the item as you return it. Tap stop when done.",
+    maxDuration: 30,
     allowPhoto: false,
     allowUpload: false,
     showSkip: true,
   },
   V3: {
     title: "Inspect Your Item",
-    subtitle:
-      "Your item is back! Record a video inspection. This is your evidence if anything is wrong.",
-    duration: 10,
+    subtitle: "Your item is back! Record a video inspection. Tap stop when you're done.",
+    maxDuration: 30,
     allowPhoto: false,
     allowUpload: false,
     showSkip: false,
@@ -80,13 +75,16 @@ export default function VideoCapture({
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const frameTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const framesRef = useRef<string[]>([]);
 
   const [cameraActive, setCameraActive] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [countdown, setCountdown] = useState(config.duration);
+  const [elapsed, setElapsed] = useState(0);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [capturedFrames, setCapturedFrames] = useState<string[]>([]);
+
+  const isEvidence = mode !== "upload";
 
   const handleVideoMetadata = useCallback(() => {
     videoRef.current?.play().catch(() => {});
@@ -136,7 +134,6 @@ export default function VideoCapture({
     setCameraActive(false);
   }, []);
 
-  // Attach stream after video element mounts
   useEffect(() => {
     const video = videoRef.current;
     const stream = streamRef.current;
@@ -172,15 +169,39 @@ export default function VideoCapture({
     return canvas.toDataURL("image/jpeg", 0.85);
   }, []);
 
+  // Extracted finish logic so both auto-stop and manual stop can call it
+  const finishRecording = useCallback(() => {
+    if (frameTimerRef.current) clearInterval(frameTimerRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setRecording(false);
+    onRecordingStateChange?.(false);
+
+    const lastFrame = captureFrame();
+    if (lastFrame) framesRef.current.push(lastFrame);
+
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "video/webm" });
+        onVideoBlob?.(blob);
+      };
+      recorderRef.current.stop();
+      recorderRef.current = null;
+    }
+
+    const finalFrames = [...framesRef.current];
+    setCapturedFrames(finalFrames);
+    stopCamera();
+    onFramesCaptured(finalFrames);
+  }, [captureFrame, stopCamera, onFramesCaptured, onRecordingStateChange, onVideoBlob]);
+
   const startRecording = useCallback(() => {
-    const frames: string[] = [];
+    framesRef.current = [];
     chunksRef.current = [];
     setRecording(true);
-    setCountdown(config.duration);
+    setElapsed(0);
     setCapturedFrames([]);
     onRecordingStateChange?.(true);
 
-    // Start MediaRecorder for raw video blob (evidence modes)
     if (onVideoBlob && streamRef.current) {
       try {
         const recorder = new MediaRecorder(streamRef.current, {
@@ -192,54 +213,27 @@ export default function VideoCapture({
         recorder.start();
         recorderRef.current = recorder;
       } catch {
-        // MediaRecorder not supported, frames-only fallback
+        // MediaRecorder not supported
       }
     }
 
     const firstFrame = captureFrame();
-    if (firstFrame) frames.push(firstFrame);
+    if (firstFrame) framesRef.current.push(firstFrame);
 
     frameTimerRef.current = setInterval(() => {
       const frame = captureFrame();
-      if (frame) frames.push(frame);
+      if (frame) framesRef.current.push(frame);
     }, FRAME_INTERVAL);
 
-    let remaining = config.duration;
+    let seconds = 0;
     timerRef.current = setInterval(() => {
-      remaining -= 1;
-      setCountdown(remaining);
-      if (remaining <= 0) {
-        if (frameTimerRef.current) clearInterval(frameTimerRef.current);
-        if (timerRef.current) clearInterval(timerRef.current);
-        setRecording(false);
-        onRecordingStateChange?.(false);
-
-        const lastFrame = captureFrame();
-        if (lastFrame) frames.push(lastFrame);
-
-        // Stop MediaRecorder and emit blob
-        if (recorderRef.current && recorderRef.current.state !== "inactive") {
-          recorderRef.current.onstop = () => {
-            const blob = new Blob(chunksRef.current, { type: "video/webm" });
-            onVideoBlob?.(blob);
-          };
-          recorderRef.current.stop();
-          recorderRef.current = null;
-        }
-
-        setCapturedFrames(frames);
-        stopCamera();
-        onFramesCaptured(frames);
+      seconds += 1;
+      setElapsed(seconds);
+      if (seconds >= config.maxDuration) {
+        finishRecording();
       }
     }, 1000);
-  }, [
-    captureFrame,
-    stopCamera,
-    onFramesCaptured,
-    onRecordingStateChange,
-    onVideoBlob,
-    config.duration,
-  ]);
+  }, [captureFrame, onRecordingStateChange, onVideoBlob, config.maxDuration, finishRecording]);
 
   const takePhoto = useCallback(() => {
     let attempts = 0;
@@ -315,8 +309,6 @@ export default function VideoCapture({
     };
   }, [stopCamera]);
 
-  const isEvidence = mode !== "upload";
-
   return (
     <div className="space-y-4">
       <canvas ref={canvasRef} className="hidden" />
@@ -336,28 +328,27 @@ export default function VideoCapture({
             />
 
             {recording && (
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute inset-0 border-4 border-red-500 rounded-3xl animate-pulse" />
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/90 text-white">
+              <div className="absolute inset-0">
+                {/* Border + badge are non-interactive */}
+                <div className="absolute inset-0 border-4 border-red-500 rounded-3xl animate-pulse pointer-events-none" />
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/90 text-white pointer-events-none">
                   <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
-                  <span className="font-mono font-bold text-sm">{countdown}s</span>
+                  <span className="font-mono font-bold text-sm">{elapsed}s</span>
                 </div>
+
+                {/* Stop button — always visible during recording */}
                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2">
-                  <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
-                    <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="4" />
-                    <circle
-                      cx="32"
-                      cy="32"
-                      r="28"
-                      fill="none"
-                      stroke="white"
-                      strokeWidth="4"
-                      strokeLinecap="round"
-                      strokeDasharray={`${2 * Math.PI * 28}`}
-                      strokeDashoffset={`${2 * Math.PI * 28 * (countdown / config.duration)}`}
-                      className="transition-all duration-1000 ease-linear"
-                    />
-                  </svg>
+                  <button
+                    onClick={finishRecording}
+                    className="w-20 h-20 rounded-full bg-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
+                  >
+                    <div className="w-10 h-10 rounded-sm bg-red-500" />
+                  </button>
+                  {isEvidence && (
+                    <p className="text-white text-[10px] text-center mt-2 font-medium">
+                      Tap to stop
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -491,12 +482,12 @@ export default function VideoCapture({
         )}
       </div>
 
-      {/* Retake */}
       {capturedFrames.length > 0 && !cameraActive && (
         <div className="flex gap-3">
           <button
             onClick={() => {
               setCapturedFrames([]);
+              framesRef.current = [];
               startCamera();
             }}
             className="flex-1 py-3 border-2 border-inventory-200 text-inventory-600 rounded-2xl font-display font-semibold text-sm hover:border-inventory-400 transition-colors"
