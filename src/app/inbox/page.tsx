@@ -10,6 +10,8 @@ import DepositConfirmCard from "@/components/messages/DepositConfirmCard";
 import ReturnConfirmCard from "@/components/messages/ReturnConfirmCard";
 import PickupCoordinationCard from "@/components/messages/PickupCoordinationCard";
 import PickupConfirmButton from "@/components/messages/PickupConfirmButton";
+import PickupSuggestionCard from "@/components/messages/PickupSuggestionCard";
+import { useLogisticsParser } from "@/hooks/useLogisticsParser";
 
 type Message = {
   id: string;
@@ -51,6 +53,8 @@ const SYSTEM_MESSAGE_TYPES = [
   "deposit_nudge",
   "deposit_warning",
   "deposit_auto_cancelled",
+  "logistics_confirmed",
+  "logistics_partial",
 ];
 
 export default function InboxPage() {
@@ -72,6 +76,7 @@ export default function InboxPage() {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const activeConvRef = useRef<Conversation | null>(null);
   const supabase = createClient();
+  const { triggerParse } = useLogisticsParser();
 
   // Keep ref in sync so realtime callback sees latest state
   useEffect(() => {
@@ -402,6 +407,28 @@ export default function InboxPage() {
       () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
       100,
     );
+
+    // Trigger Miles to parse for logistics agreement
+    if (msg) {
+      console.log("MILES DEBUG: transactionStates =", JSON.stringify(transactionStates));
+      
+      // Find transaction ID from conversation messages (more reliable than state lookup)
+      const txIdFromMessages = activeConv?.messages
+        .filter((m) => m.payload?.transaction_id)
+        .map((m) => m.payload!.transaction_id as string)
+        .pop();
+      
+      const activeTxId = txIdFromMessages 
+        ?? Object.entries(transactionStates).find(
+          ([, tx]) => ["approved", "deposit_held"].includes(tx.state)
+        )?.[0];
+      
+      console.log("MILES DEBUG: activeTxId =", activeTxId);
+      
+      if (activeTxId) {
+        triggerParse(activeTxId);
+      }
+    }
   };
 
   // Refresh transaction state after an action (called by child components)
@@ -441,6 +468,9 @@ export default function InboxPage() {
     if (msg.message_type === "request_cancelled") return "Request cancelled";
     if (msg.message_type === "request_expired") return "Request expired";
     if (msg.message_type === "pickup_proposal") return "Pickup proposal sent";
+    if (msg.message_type === "pickup_suggestion") return "Miles suggested pickup details";
+    if (msg.message_type === "logistics_confirmed") return "Pickup details locked in";
+    if (msg.message_type === "logistics_partial") return "Pickup details — waiting for confirm";
     if (msg.message_type === "return_submitted") return "Return submitted";
 
     return msg.content;
@@ -542,27 +572,13 @@ export default function InboxPage() {
       );
     }
 
-    // ─── Deposit confirmed → show pickup coordination card ───
+    // ─── Deposit confirmed → system badge (Miles handles logistics now) ───
     if (msg.message_type === "deposit_confirmed") {
       return (
-        <div key={msg.id} className="flex flex-col items-center gap-2">
+        <div key={msg.id} className="flex flex-col items-center gap-1">
           <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs border border-green-200">
             {msg.content}
           </span>
-          {txState?.state === "deposit_held" && (
-            <PickupCoordinationCard
-              transactionId={txId!}
-              itemTitle={(payload.item_title as string) ?? "the item"}
-              partnerName={activeConv?.partner.display_name ?? "your neighbor"}
-              userUnitNumber={myProfile?.unit_number ?? ""}
-              recipientId={activeConv?.partner.id ?? ""}
-              currentUserId={myId ?? ""}
-              onSent={() => {
-                // Refresh messages after sending
-                setTimeout(() => window.location.reload(), 500);
-              }}
-            />
-          )}
           <p className="text-[10px] text-inventory-400">
             {formatTime(msg.created_at)}
           </p>
@@ -624,6 +640,31 @@ export default function InboxPage() {
       );
     }
 
+    // ─── Miles pickup suggestion → both parties see confirm card ───
+    if (msg.message_type === "pickup_suggestion") {
+      return (
+        <div key={msg.id} className="flex flex-col items-center gap-1">
+          <PickupSuggestionCard
+            transactionId={(payload.transaction_id as string) ?? ""}
+            currentUserId={myId ?? ""}
+            ownerId={txState?.owner_id ?? ""}
+            borrowerId={myId === txState?.owner_id ? activeConv?.partner.id ?? "" : myId ?? ""}
+            suggestedLocation={(payload.suggested_location as string) ?? null}
+            suggestedDate={(payload.suggested_date as string) ?? null}
+            suggestedTime={(payload.suggested_time as string) ?? null}
+            suggestedNote={(payload.suggested_note as string) ?? null}
+            dateDisplay={(payload.date_display as string) ?? null}
+            timeDisplay={(payload.time_display as string) ?? null}
+            confidence={(payload.confidence as number) ?? 0.7}
+            transactionState={txState?.state ?? "deposit_held"}
+          />
+          <p className="text-[10px] text-inventory-400">
+            {formatTime(msg.created_at)}
+          </p>
+        </div>
+      );
+    }
+
     // ─── Return submitted → owner sees confirm card ───
     if (msg.message_type === "return_submitted") {
       return (
@@ -662,6 +703,8 @@ export default function InboxPage() {
         deposit_auto_cancelled: "bg-red-50 text-red-700 border-red-200",
         pickup_confirmed: "bg-green-50 text-green-700 border-green-200",
         pickup_partial: "bg-amber-50 text-amber-700 border-amber-200",
+        logistics_confirmed: "bg-green-50 text-green-700 border-green-200",
+        logistics_partial: "bg-amber-50 text-amber-700 border-amber-200",
         return_initiated: "bg-blue-50 text-blue-700 border-blue-200",
         transaction_complete: "bg-green-50 text-green-700 border-green-200",
         request_cancelled:

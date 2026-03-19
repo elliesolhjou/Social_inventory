@@ -61,7 +61,7 @@ export async function POST(
     .from("transactions")
     .update({
       state: "inspection_pending",
-      inspection_pending_at: now,
+      return_confirmed_at: now,
       inspection_deadline: inspectionDeadline,
       updated_at: now,
     })

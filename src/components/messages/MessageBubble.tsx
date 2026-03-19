@@ -3,6 +3,7 @@
 import BorrowRequestCard from "./BorrowRequestCard";
 import DepositConfirmCard from "./DepositConfirmCard";
 import ReturnConfirmCard from "./ReturnConfirmCard";
+import PickupSuggestionCard from "./PickupSuggestionCard";
 
 interface Message {
   id: string;
@@ -21,6 +22,8 @@ interface MessageBubbleProps {
   transactionState?: string;
   /** The owner_id of the relevant transaction */
   transactionOwnerId?: string;
+  /** The borrower_id of the relevant transaction */
+  transactionBorrowerId?: string;
 }
 
 export default function MessageBubble({
@@ -28,6 +31,7 @@ export default function MessageBubble({
   currentUserId,
   transactionState,
   transactionOwnerId,
+  transactionBorrowerId,
 }: MessageBubbleProps) {
   const isMine = message.sender_id === currentUserId;
   const payload = message.payload ?? {};
@@ -94,6 +98,35 @@ export default function MessageBubble({
         </div>
       );
 
+    // ─── Miles detected logistics → both parties see confirm card ───
+    case "pickup_suggestion":
+      return (
+        <div className="flex flex-col items-center mb-2 gap-1">
+          <PickupSuggestionCard
+            transactionId={payload.transaction_id as string}
+            currentUserId={currentUserId}
+            ownerId={transactionOwnerId ?? ""}
+            borrowerId={transactionBorrowerId ?? ""}
+            suggestedLocation={(payload.suggested_location as string) ?? null}
+            suggestedDate={(payload.suggested_date as string) ?? null}
+            suggestedTime={(payload.suggested_time as string) ?? null}
+            suggestedNote={(payload.suggested_note as string) ?? null}
+            dateDisplay={(payload.date_display as string) ?? null}
+            timeDisplay={(payload.time_display as string) ?? null}
+            confidence={(payload.confidence as number) ?? 0.7}
+            transactionState={transactionState ?? "deposit_held"}
+          />
+        </div>
+      );
+
+    // ─── Logistics fully confirmed ───
+    case "logistics_confirmed":
+      return <SystemBadge text={message.content} variant="success" />;
+
+    // ─── Logistics partially confirmed (one party) ───
+    case "logistics_partial":
+      return <SystemBadge text={message.content} variant="warning" />;
+
     // ─── System messages (no action needed) ───
     case "request_declined":
       return <SystemBadge text={message.content} variant="error" />;
@@ -118,6 +151,22 @@ export default function MessageBubble({
 
     case "request_cancelled":
       return <SystemBadge text={message.content} variant="muted" />;
+
+    // ─── Pickup proposal (from PickupCoordinationCard — still supported) ───
+    case "pickup_proposal":
+      return (
+        <div className={`flex ${isMine ? "justify-end" : "justify-start"} mb-1.5`}>
+          <div
+            className={`max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed
+              ${isMine
+                ? "bg-blue-100 text-blue-900 rounded-br-sm"
+                : "bg-muted text-foreground rounded-bl-sm"
+              }`}
+          >
+            <p className="whitespace-pre-line">{message.content}</p>
+          </div>
+        </div>
+      );
 
     // ─── Regular chat message ───
     case "chat":
