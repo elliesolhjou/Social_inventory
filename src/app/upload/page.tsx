@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import VideoCapture from "@/components/upload/VideoCapture";
+import VideoCapture from "@/components/transactions/VideoCapture";
 import PhotoReviewGrid from "@/components/upload/PhotoReviewGrid";
 import ItemReviewForm, {
   type ItemFormData,
