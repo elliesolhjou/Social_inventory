@@ -9,7 +9,7 @@ const supabase = createClient(
 );
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-02-24.acacia" as Stripe.LatestApiVersion,
+  apiVersion: "2025-04-30.basil",
 });
 
 export async function GET(request: NextRequest) {
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
         sender_id: tx.borrower_id,
         recipient_id: tx.owner_id,
         message_type: "transaction_completed",
-        content: `The 48-hour inspection window for "${itemTitle}" has closed. No damage was reported. ${depositDollars} deposit has been released to the borrower.`,
+        content: `The 24-hour inspection window for "${itemTitle}" has closed. No damage was reported. ${depositDollars} deposit has been released to the borrower.`,
         topic: tx.item_id,
         payload: {
           transaction_id: tx.id,

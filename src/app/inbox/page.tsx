@@ -45,7 +45,6 @@ const SYSTEM_MESSAGE_TYPES = [
   "request_declined",
   "request_pending",
   "request_expired",
-  "pickup_confirmed",
   "pickup_partial",
   "return_initiated",
   "transaction_complete",

@@ -113,14 +113,59 @@ export async function POST(
     }
   }
 
-  // If no extracted frames yet, try to get a thumbnail from the video URL
-  // For now, we'll work with whatever we have
+  // Fallback after images: return photos from transaction_photos table
+  if (afterImages.length === 0) {
+    const { data: returnPhotos } = await supabaseAdmin
+      .from("transaction_photos")
+      .select("photo_url")
+      .eq("transaction_id", transactionId)
+      .eq("photo_type", "return")
+      .order("display_order", { ascending: true })
+      .limit(4);
+
+    if (returnPhotos && returnPhotos.length > 0) {
+      for (const photo of returnPhotos) {
+        try {
+          const res = await fetch(photo.photo_url);
+          const buf = await res.arrayBuffer();
+          afterImages.push(Buffer.from(buf).toString("base64"));
+        } catch { /* skip */ }
+      }
+    }
+  }
+
+  // Fallback before images: listing baseline photos from transaction_photos
+  if (beforeImages.length === 0) {
+    const { data: baselinePhotos } = await supabaseAdmin
+      .from("transaction_photos")
+      .select("photo_url")
+      .eq("transaction_id", transactionId)
+      .eq("photo_type", "listing_baseline")
+      .order("display_order", { ascending: true })
+      .limit(4);
+
+    if (baselinePhotos && baselinePhotos.length > 0) {
+      for (const photo of baselinePhotos) {
+        try {
+          const res = await fetch(photo.photo_url);
+          const buf = await res.arrayBuffer();
+          beforeImages.push(Buffer.from(buf).toString("base64"));
+        } catch { /* skip */ }
+      }
+    }
+  }
+
   if (beforeImages.length === 0 && afterImages.length === 0) {
     return NextResponse.json(
-      { error: "No comparison images available. Ensure listing photos exist and V3 frames are extracted." },
+      { error: "No comparison images available. Upload listing photos via Magic Upload and ensure return photos were submitted." },
       { status: 400 }
     );
   }
+
+  // Determine comparison mode
+  let comparisonMode = "full"; // before vs after
+  if (beforeImages.length === 0) comparisonMode = "after_only";
+  if (afterImages.length === 0) comparisonMode = "before_only";
 
   // Build Gemini prompt
   const checklistContext = item.condition_checklist_json
@@ -129,19 +174,29 @@ export async function POST(
 
   const sourceLabel = v1Evidence ? "PICKUP SCAN (V1) — borrower's video at pickup" : "LISTING PHOTOS — item when first listed";
 
+  let taskDescription = "";
+  if (comparisonMode === "full") {
+    taskDescription = `Compare the BEFORE photos (${sourceLabel}) with the AFTER photos (item after return from borrower). Identify any new damage, missing parts, or condition changes.`;
+  } else if (comparisonMode === "after_only") {
+    taskDescription = `Assess the condition of the item in these AFTER photos (item after return from borrower). No before photos are available. Look for any visible damage, wear, or issues. Note that without before photos, confidence should be lower.`;
+  } else {
+    taskDescription = `These are BEFORE photos of the item. No after photos are available yet. Describe the current condition for baseline documentation.`;
+  }
+
   const prompt = `You are a damage assessment AI for Proxe, a peer-to-peer lending platform.
 
 ITEM: "${item.title}"
 ${checklistContext}
 
-TASK: Compare the BEFORE photos (${sourceLabel}) with the AFTER photos (OWNER INSPECTION V3 — item after return from borrower). Identify any new damage, missing parts, or condition changes.
+TASK: ${taskDescription}
 
 RULES:
-- Only flag CLEAR, VISIBLE differences between before and after.
+- Only flag CLEAR, VISIBLE differences or damage.
 - Normal wear (minor scuffs, dust) is NOT damage.
 - If you cannot clearly see damage or the photos are ambiguous, set confidence below 70 and recommend needs_human_review.
 - Be specific about WHAT changed and WHERE on the item.
 - Be fair to both parties.
+- If only one set of photos is available, assess what you can see but lower your confidence.
 
 Respond ONLY in JSON, no markdown, no backticks:
 {
@@ -166,7 +221,7 @@ Respond ONLY in JSON, no markdown, no backticks:
     }
 
     if (afterImages.length > 0) {
-      parts.push("AFTER PHOTOS (Owner Inspection V3 — item after return):");
+      parts.push("AFTER PHOTOS (item condition after return from borrower):");
       for (const b64 of afterImages) {
         parts.push({ inlineData: { mimeType: "image/jpeg", data: b64 } });
       }
