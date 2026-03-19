@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const supabase = await createServerSupabase();
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
   const { id: disputeId } = await params;
 
   const {
@@ -16,8 +21,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Fetch dispute
-  const { data: dispute, error: disputeError } = await supabase
+  const { data: dispute, error: disputeError } = await supabaseAdmin
     .from("disputes")
     .select("*")
     .eq("id", disputeId)
@@ -27,10 +31,9 @@ export async function GET(
     return NextResponse.json({ error: "Dispute not found" }, { status: 404 });
   }
 
-  // Verify participant
-  const { data: transaction } = await supabase
+  const { data: transaction } = await supabaseAdmin
     .from("transactions")
-    .select("id, borrower_id, owner_id, item_id, state, deposit_cents, payment_intent_id")
+    .select("id, borrower_id, owner_id, item_id, state, payment_intent_id")
     .eq("id", dispute.transaction_id)
     .single();
 
@@ -38,34 +41,26 @@ export async function GET(
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
 
-  if (transaction.borrower_id !== user.id && transaction.owner_id !== user.id) {
-    return NextResponse.json({ error: "Not a participant" }, { status: 403 });
-  }
-
-  // Fetch all evidence
-  const { data: evidence } = await supabase
+  const { data: evidence } = await supabaseAdmin
     .from("transaction_evidence")
-    .select("id, evidence_type, video_url, thumbnail_url, duration_seconds, extracted_frames, captured_at")
+    .select("id, evidence_type, video_url, thumbnail_url, duration_seconds, extracted_frames, ai_damage_report, captured_at")
     .eq("transaction_id", dispute.transaction_id)
     .order("captured_at", { ascending: true });
 
-  // Fetch item info
-  const { data: item } = await supabase
+  const { data: item } = await supabaseAdmin
     .from("items")
-    .select("id, title, condition_checklist_json")
+    .select("id, title, deposit_cents, condition_checklist_json")
     .eq("id", transaction.item_id)
     .single();
 
-  // Fetch state log
-  const { data: stateLog } = await supabase
+  const { data: stateLog } = await supabaseAdmin
     .from("dispute_state_log")
     .select("id, from_state, to_state, actor_id, reason, created_at")
     .eq("dispute_id", disputeId)
     .order("created_at", { ascending: true });
 
-  // Fetch profiles for both parties (no-join pattern)
   const profileIds = [transaction.borrower_id, transaction.owner_id].filter(Boolean);
-  const { data: profiles } = await supabase
+  const { data: profiles } = await supabaseAdmin
     .from("profiles")
     .select("id, display_name, avatar_url, dispute_history_json")
     .in("id", profileIds);

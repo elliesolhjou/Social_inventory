@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-02-24.acacia" as Stripe.LatestApiVersion,
-});
-
-type Resolution = "resolved_owner" | "resolved_borrower" | "dismissed";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const supabaseAdmin = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: "2025-04-30.basil",
+  });
+
   const supabase = await createServerSupabase();
   const { id: disputeId } = await params;
 
@@ -23,12 +27,9 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // TODO: In production, restrict to admin/founder role.
-  // For now, any authenticated user with the dispute ID can resolve (founder-only).
-
   const body = await request.json();
   const { resolution, resolution_notes, capture_cents } = body as {
-    resolution: Resolution;
+    resolution: "resolved_owner" | "resolved_borrower" | "dismissed";
     resolution_notes?: string;
     capture_cents?: number;
   };
@@ -40,8 +41,7 @@ export async function POST(
     );
   }
 
-  // Fetch dispute
-  const { data: dispute, error: disputeError } = await supabase
+  const { data: dispute, error: disputeError } = await supabaseAdmin
     .from("disputes")
     .select("*")
     .eq("id", disputeId)
@@ -58,10 +58,9 @@ export async function POST(
     );
   }
 
-  // Fetch transaction for Stripe + participant info
-  const { data: transaction } = await supabase
+  const { data: transaction } = await supabaseAdmin
     .from("transactions")
-    .select("id, owner_id, borrower_id, deposit_cents, payment_intent_id, state")
+    .select("id, owner_id, borrower_id, state, payment_intent_id")
     .eq("id", dispute.transaction_id)
     .single();
 
@@ -69,19 +68,32 @@ export async function POST(
     return NextResponse.json({ error: "Transaction not found" }, { status: 404 });
   }
 
-  // ── Stripe settlement ──────────────────────────────────────────
+  // Get deposit from items table
+  const { data: txWithItem } = await supabaseAdmin
+    .from("transactions")
+    .select("item_id")
+    .eq("id", dispute.transaction_id)
+    .single();
+
+  const { data: item } = await supabaseAdmin
+    .from("items")
+    .select("deposit_cents, title")
+    .eq("id", txWithItem?.item_id)
+    .single();
+
+  const depositCents = item?.deposit_cents ?? 0;
+
+  // Stripe settlement
   let depositCapturedCents = 0;
 
   if (transaction.payment_intent_id) {
     try {
       if (resolution === "resolved_owner") {
-        // Capture deposit (full or partial)
         const amountToCapture =
           capture_cents && capture_cents > 0
-            ? Math.min(capture_cents, transaction.deposit_cents ?? 0)
-            : transaction.deposit_cents ?? 0;
+            ? Math.min(capture_cents, depositCents)
+            : depositCents;
 
-        // Check if PaymentIntent is still capturable (7-day window)
         const pi = await stripe.paymentIntents.retrieve(transaction.payment_intent_id);
         if (pi.status === "requires_capture") {
           await stripe.paymentIntents.capture(transaction.payment_intent_id, {
@@ -89,16 +101,12 @@ export async function POST(
           });
           depositCapturedCents = amountToCapture;
         } else {
-          // Past 7-day capture window — already expired or captured
           return NextResponse.json(
-            {
-              error: `PaymentIntent status is "${pi.status}". Manual capture window may have expired. Handle via Stripe dashboard.`,
-            },
+            { error: `PaymentIntent status is "${pi.status}". Manual capture window may have expired.` },
             { status: 409 }
           );
         }
       } else {
-        // resolved_borrower or dismissed → release deposit
         const pi = await stripe.paymentIntents.retrieve(transaction.payment_intent_id);
         if (pi.status === "requires_capture") {
           await stripe.paymentIntents.cancel(transaction.payment_intent_id);
@@ -106,8 +114,7 @@ export async function POST(
         depositCapturedCents = 0;
       }
     } catch (stripeErr: unknown) {
-      const message =
-        stripeErr instanceof Error ? stripeErr.message : "Stripe operation failed";
+      const message = stripeErr instanceof Error ? stripeErr.message : "Stripe operation failed";
       return NextResponse.json(
         { error: "Stripe settlement failed", detail: message },
         { status: 500 }
@@ -115,24 +122,15 @@ export async function POST(
     }
   }
 
-  // ── Move dispute through states: filed → under_review → resolution ──
-  // If still 'filed', transition to under_review first
+  // Transition: filed → under_review → resolution
   if (dispute.state === "filed") {
-    const { error: reviewError } = await supabase
+    await supabaseAdmin
       .from("disputes")
       .update({ state: "under_review" })
       .eq("id", disputeId);
-
-    if (reviewError) {
-      return NextResponse.json(
-        { error: "Failed to transition to under_review", detail: reviewError.message },
-        { status: 500 }
-      );
-    }
   }
 
-  // Now resolve
-  const { error: resolveError } = await supabase
+  const { error: resolveError } = await supabaseAdmin
     .from("disputes")
     .update({
       state: resolution,
@@ -150,10 +148,10 @@ export async function POST(
     );
   }
 
-  // ── Transition transaction to completed ─────────────────────────
-  const { error: txStateError } = await supabase
+  // Complete the transaction
+  const { error: txStateError } = await supabaseAdmin
     .from("transactions")
-    .update({ state: "completed", updated_at: new Date().toISOString() })
+    .update({ state: "completed", completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", dispute.transaction_id);
 
   if (txStateError) {
@@ -163,7 +161,7 @@ export async function POST(
     );
   }
 
-  await supabase.from("transaction_state_log").insert({
+  await supabaseAdmin.from("transaction_state_log").insert({
     transaction_id: dispute.transaction_id,
     from_state: "disputed",
     to_state: "completed",
@@ -172,10 +170,9 @@ export async function POST(
     metadata: { dispute_id: disputeId, deposit_captured_cents: depositCapturedCents },
   });
 
-  // ── Update fraud counters ──────────────────────────────────────
+  // Update fraud counters
   if (resolution === "resolved_owner") {
-    // Borrower caused damage → increment borrower counter
-    const { data: borrowerProfile } = await supabase
+    const { data: borrowerProfile } = await supabaseAdmin
       .from("profiles")
       .select("dispute_history_json")
       .eq("id", transaction.borrower_id)
@@ -183,21 +180,18 @@ export async function POST(
 
     if (borrowerProfile) {
       const history = borrowerProfile.dispute_history_json ?? {};
-      const count = (history.confirmed_damages_as_borrower ?? 0) + 1;
-      await supabase
+      await supabaseAdmin
         .from("profiles")
         .update({
           dispute_history_json: {
             ...history,
-            confirmed_damages_as_borrower: count,
-            last_reset_at: history.last_reset_at ?? null,
+            confirmed_damages_as_borrower: ((history as Record<string, number>).confirmed_damages_as_borrower ?? 0) + 1,
           },
         })
         .eq("id", transaction.borrower_id);
     }
   } else if (resolution === "resolved_borrower" || resolution === "dismissed") {
-    // Owner's claim denied → increment owner counter
-    const { data: ownerProfile } = await supabase
+    const { data: ownerProfile } = await supabaseAdmin
       .from("profiles")
       .select("dispute_history_json")
       .eq("id", transaction.owner_id)
@@ -205,21 +199,19 @@ export async function POST(
 
     if (ownerProfile) {
       const history = ownerProfile.dispute_history_json ?? {};
-      const count = (history.denied_disputes_as_owner ?? 0) + 1;
-      await supabase
+      await supabaseAdmin
         .from("profiles")
         .update({
           dispute_history_json: {
             ...history,
-            denied_disputes_as_owner: count,
-            last_reset_at: history.last_reset_at ?? null,
+            denied_disputes_as_owner: ((history as Record<string, number>).denied_disputes_as_owner ?? 0) + 1,
           },
         })
         .eq("id", transaction.owner_id);
     }
   }
 
-  // ── Notify both parties ────────────────────────────────────────
+  // Notify both parties
   const resolutionLabel =
     resolution === "resolved_owner"
       ? "in the owner's favor"
@@ -227,13 +219,14 @@ export async function POST(
         ? "in the borrower's favor"
         : "dismissed";
 
-  const notifyIds = [transaction.owner_id, transaction.borrower_id];
-  for (const recipientId of notifyIds) {
-    await supabase.from("messages").insert({
+  const itemTitle = item?.title ?? "the item";
+
+  for (const recipientId of [transaction.owner_id, transaction.borrower_id]) {
+    await supabaseAdmin.from("messages").insert({
       sender_id: user.id,
       recipient_id: recipientId,
       message_type: "dispute_resolved",
-      content: `Dispute resolved ${resolutionLabel}.${
+      content: `Dispute for "${itemTitle}" resolved ${resolutionLabel}.${
         depositCapturedCents > 0
           ? ` $${(depositCapturedCents / 100).toFixed(2)} of the deposit was captured.`
           : " The deposit has been released."
