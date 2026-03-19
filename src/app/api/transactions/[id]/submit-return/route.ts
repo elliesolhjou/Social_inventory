@@ -27,7 +27,7 @@ export async function POST(
 
   // 2. Parse request body — expect array of photo URLs from client upload
   const body = await request.json();
-  const { photo_urls } = body as { photo_urls: string[] };
+  const { photo_urls, photo_metadata } = body as { photo_urls: string[]; photo_metadata?: Record<string, unknown>[] };
 
   if (!photo_urls || !Array.isArray(photo_urls) || photo_urls.length === 0) {
     return NextResponse.json(
@@ -85,6 +85,7 @@ export async function POST(
     photo_type: "return",
     display_order: i,
     capture_method: "camera",
+    device_metadata: photo_metadata?.[i] ?? null,
     captured_at: now,
   }));
 

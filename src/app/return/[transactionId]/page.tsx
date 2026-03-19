@@ -154,7 +154,7 @@ export default function ReturnPage() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ photo_urls: photoUrls }),
+            body: JSON.stringify({ photo_urls: photoUrls, photo_metadata: photos.map((p) => p.deviceMetadata) }),
           }
         );
 
