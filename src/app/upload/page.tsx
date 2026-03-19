@@ -2,16 +2,13 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
-import VideoCapture from "@/components/transactions/VideoCapture";
-import PhotoReviewGrid from "@/components/upload/PhotoReviewGrid";
+import VideoCapture from "@/components/upload/VideoCapture";
 import ItemReviewForm, {
   type ItemFormData,
 } from "@/components/upload/ItemReviewForm";
 import { createClient } from "@/lib/supabase/client";
 
-type Step = "capture" | "photo_review" | "analyzing" | "review" | "success";
-
-const STEP_LABELS = ["Capture", "Photos", "Analyze", "Review"];
+type Step = "capture" | "analyzing" | "review" | "success";
 
 export default function MagicUpload() {
   const [step, setStep] = useState<Step>("capture");
@@ -22,39 +19,14 @@ export default function MagicUpload() {
   const [createdItemId, setCreatedItemId] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState(0);
 
-  // ── Step index for the stepper ──────────────────────────────────
-  const stepIndex =
-    step === "capture"
-      ? 0
-      : step === "photo_review"
-        ? 1
-        : step === "analyzing"
-          ? 2
-          : step === "review" || step === "success"
-            ? 3
-            : 0;
-
-  // ── Capture → go to photo review (don't call vision yet) ───────
-  const handleFramesCaptured = useCallback((capturedFrames: string[]) => {
-    setFrames((prev) => [...prev, ...capturedFrames].slice(0, 10));
-    setStep("photo_review");
-    setError(null);
-  }, []);
-
-  // ── "Add from Camera" in photo review → back to capture (keep frames) ──
-  const handleAddFromCamera = useCallback(() => {
-    setStep("capture");
-    // frames are preserved — VideoCapture will append on next capture
-  }, []);
-
-  // ── Photo review → send all frames to vision agent ─────────────
-  const handlePhotosApproved = useCallback(async () => {
-    if (frames.length === 0) return;
-
+  // Step 1 → 2: Frames captured, send to VisionAgent
+  const handleFramesCaptured = useCallback(async (capturedFrames: string[]) => {
+    setFrames(capturedFrames);
     setStep("analyzing");
     setError(null);
     setAnalysisProgress(0);
 
+    // Simulate progress while waiting for API
     const progressInterval = setInterval(() => {
       setAnalysisProgress((prev) => {
         if (prev >= 90) {
@@ -69,7 +41,7 @@ export default function MagicUpload() {
       const response = await fetch("/api/vision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames }),
+        body: JSON.stringify({ frames: capturedFrames }),
       });
 
       clearInterval(progressInterval);
@@ -81,17 +53,21 @@ export default function MagicUpload() {
       }
 
       const result = await response.json();
+
+      // Small delay so 100% progress is visible
       await new Promise((r) => setTimeout(r, 400));
+
       setItemData(result.item);
       setStep("review");
     } catch (err: any) {
       clearInterval(progressInterval);
+      console.error("Vision analysis error:", err);
       setError(err.message || "Failed to analyze item. Please try again.");
-      setStep("photo_review"); // go back to photo review, not capture
+      setStep("capture");
     }
-  }, [frames]);
+  }, []);
 
-  // ── Publish item ───────────────────────────────────────────────
+  // Step 3: Publish item to Supabase
   const handlePublish = useCallback(
     async (formData: ItemFormData) => {
       setIsSubmitting(true);
@@ -100,28 +76,25 @@ export default function MagicUpload() {
       try {
         const supabase = createClient();
 
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error("You must be signed in to publish an item.");
-
-        const { data: userProfile } = await supabase
+        // TODO: In production, get owner_id from auth session
+        // For dev, pick a random profile
+        const { data: profiles } = await supabase
           .from("profiles")
-          .select("building_id")
-          .eq("id", user.id)
-          .single();
+          .select("id")
+          .limit(20);
 
-        let buildingId = userProfile?.building_id;
-        if (!buildingId) {
-          const { data: buildings } = await supabase
-            .from("buildings")
-            .select("id")
-            .limit(1);
-          buildingId = buildings?.[0]?.id;
+        const randomOwner =
+          profiles?.[Math.floor(Math.random() * (profiles?.length ?? 1))];
+
+        if (!randomOwner) {
+          throw new Error("No profiles found. Run the seed script first.");
         }
 
-        if (!buildingId)
-          throw new Error("No building found. Please complete onboarding.");
+        // Get building ID
+        const { data: building } = await supabase
+          .from("buildings")
+          .select("id")
+          .single();
 
         const { data: newItem, error: insertError } = await supabase
           .from("items")
@@ -129,17 +102,16 @@ export default function MagicUpload() {
             title: formData.title,
             description: formData.description,
             ai_description: formData.ai_description,
-            ai_category: formData.category,
-            ai_condition: formData.condition,
             category: formData.category,
             subcategory: formData.subcategory,
+            condition: formData.condition,
             deposit_cents: formData.suggested_deposit_cents,
             max_borrow_days: formData.max_borrow_days,
             rules: formData.rules,
             status: "available",
             times_borrowed: 0,
-            owner_id: user.id,
-            building_id: buildingId,
+            owner_id: randomOwner.id,
+            building_id: building?.id,
             metadata: {
               brand: formData.brand,
               model: formData.model,
@@ -153,6 +125,20 @@ export default function MagicUpload() {
 
         if (insertError) throw insertError;
 
+        // ── NEW: Generate CLIP embedding (Fig. 5, Step 503) ────────────
+        // Fire-and-forget — don't block the publish UX
+        if (newItem?.id && frames.length > 0) {
+          fetch(`/api/items/${newItem.id}/embed`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ frame: frames[0] }),
+          }).catch((err) =>
+            console.error("Embedding generation failed (non-blocking):", err)
+          );
+        }
+        // ── END NEW ────────────────────────────────────────────────────
+
+        // Log agent action
         await supabase
           .from("agent_logs")
           .insert({
@@ -163,13 +149,14 @@ export default function MagicUpload() {
               confidence: formData.confidence,
               frames_analyzed: frames.length,
             },
-            building_id: buildingId,
+            building_id: building?.id,
           })
-          .then(() => {});
+          .then(() => {}); // fire and forget
 
         setCreatedItemId(newItem?.id ?? null);
         setStep("success");
       } catch (err: any) {
+        console.error("Publish error:", err);
         setError(err.message || "Failed to publish item. Please try again.");
       } finally {
         setIsSubmitting(false);
@@ -178,7 +165,7 @@ export default function MagicUpload() {
     [frames],
   );
 
-  // ── Full reset ─────────────────────────────────────────────────
+  // Go back to capture
   const handleRetake = useCallback(() => {
     setFrames([]);
     setItemData(null);
@@ -188,6 +175,7 @@ export default function MagicUpload() {
 
   return (
     <main className="min-h-screen pb-20">
+      {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-inventory-200/50">
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
           <Link
@@ -217,11 +205,20 @@ export default function MagicUpload() {
       </header>
 
       <div className="max-w-2xl mx-auto px-6 pt-6">
-        {/* ── Stepper (4 steps now) ─────────────────────────────── */}
+        {/* Step indicator */}
         <div className="flex items-center gap-2 mb-8">
-          {STEP_LABELS.map((label, i) => {
+          {["Capture", "Analyze", "Review"].map((label, i) => {
+            const stepIndex =
+              step === "capture"
+                ? 0
+                : step === "analyzing"
+                  ? 1
+                  : step === "review" || step === "success"
+                    ? 2
+                    : 0;
             const isActive = i === stepIndex;
             const isDone = i < stepIndex;
+
             return (
               <div key={label} className="flex items-center gap-2 flex-1">
                 <div
@@ -246,11 +243,9 @@ export default function MagicUpload() {
                 >
                   {label}
                 </span>
-                {i < STEP_LABELS.length - 1 && (
+                {i < 2 && (
                   <div
-                    className={`flex-1 h-0.5 rounded-full ${
-                      isDone ? "bg-accent/30" : "bg-inventory-100"
-                    }`}
+                    className={`flex-1 h-0.5 rounded-full ${isDone ? "bg-accent/30" : "bg-inventory-100"}`}
                   />
                 )}
               </div>
@@ -258,7 +253,7 @@ export default function MagicUpload() {
           })}
         </div>
 
-        {/* ── Error banner ──────────────────────────────────────── */}
+        {/* Error display */}
         {error && (
           <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-3">
             <svg
@@ -278,64 +273,44 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* ── Step: Capture ─────────────────────────────────────── */}
+        {/* STEP 1: Capture */}
         {step === "capture" && (
           <div className="animate-slide-up">
             <div className="mb-6">
               <h2 className="font-display text-2xl font-bold mb-1">
-                {frames.length > 0
-                  ? "Add more photos"
-                  : "Record your item"}
+                Record your item
               </h2>
               <p className="text-inventory-500 text-sm">
-                {frames.length > 0
-                  ? `You have ${frames.length} photo${frames.length !== 1 ? "s" : ""}. Capture more angles or go back to review.`
-                  : "Hold your camera steady and slowly rotate the item. 5 seconds is all we need."}
+                Hold your camera steady and slowly rotate the item. 5 seconds is
+                all we need.
               </p>
             </div>
             <VideoCapture onFramesCaptured={handleFramesCaptured} />
-
-            {/* If we already have frames, show a shortcut back to review */}
-            {frames.length > 0 && (
-              <button
-                onClick={() => setStep("photo_review")}
-                className="w-full mt-4 py-3 border-2 border-accent/30 text-accent rounded-2xl 
-                           font-display font-semibold text-sm hover:border-accent transition-colors"
-              >
-                ← Back to Photo Review ({frames.length} photo{frames.length !== 1 ? "s" : ""})
-              </button>
-            )}
           </div>
         )}
 
-        {/* ── Step: Photo Review (NEW) ──────────────────────────── */}
-        {step === "photo_review" && (
-          <PhotoReviewGrid
-            frames={frames}
-            onFramesChange={setFrames}
-            onContinue={handlePhotosApproved}
-            onAddFromCamera={handleAddFromCamera}
-            onBack={handleRetake}
-          />
-        )}
-
-        {/* ── Step: Analyzing ───────────────────────────────────── */}
+        {/* STEP 2: Analyzing */}
         {step === "analyzing" && (
           <div className="flex flex-col items-center justify-center py-20 animate-slide-up">
             <div className="relative w-24 h-24 mb-8">
+              {/* Spinning ring */}
               <div className="absolute inset-0 rounded-full border-4 border-inventory-100" />
               <div className="absolute inset-0 rounded-full border-4 border-accent border-t-transparent animate-spin" />
+              {/* Center icon */}
               <div className="absolute inset-3 rounded-full bg-accent/10 flex items-center justify-center">
                 <span className="text-2xl">🔍</span>
               </div>
             </div>
+
             <h2 className="font-display text-xl font-bold mb-2">
-              Miles is analyzing {frames.length} photo{frames.length !== 1 ? "s" : ""}...
+              VisionAgent analyzing...
             </h2>
             <p className="text-inventory-500 text-sm mb-8 text-center max-w-xs">
               Identifying item, assessing condition, writing description, and
               suggesting pricing
             </p>
+
+            {/* Progress bar */}
             <div className="w-full max-w-xs">
               <div className="h-2 rounded-full bg-inventory-100 overflow-hidden">
                 <div
@@ -361,7 +336,7 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* ── Step: Review Form ─────────────────────────────────── */}
+        {/* STEP 3: Review */}
         {step === "review" && itemData && (
           <div className="animate-slide-up">
             <div className="mb-6">
@@ -382,7 +357,7 @@ export default function MagicUpload() {
           </div>
         )}
 
-        {/* ── Step: Success ─────────────────────────────────────── */}
+        {/* SUCCESS */}
         {step === "success" && (
           <div className="flex flex-col items-center justify-center py-20 animate-slide-up text-center">
             <div className="w-20 h-20 rounded-full bg-trust-high/10 flex items-center justify-center mb-6">
@@ -390,8 +365,8 @@ export default function MagicUpload() {
             </div>
             <h2 className="font-display text-2xl font-bold mb-2">Published!</h2>
             <p className="text-inventory-500 mb-8 max-w-sm">
-              Your item is now live in your building's inventory. Neighbors can
-              start borrowing it right away.
+              Your item is now live in your building&apos;s inventory. Neighbors
+              can start borrowing it right away.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
               {createdItemId && (
