@@ -170,6 +170,13 @@ export async function POST(
     metadata: { dispute_id: disputeId, deposit_captured_cents: depositCapturedCents },
   });
 
+  // Set item back to available after dispute resolution
+  await supabaseAdmin
+    .from("items")
+    .update({ availability_status: "available", updated_at: new Date().toISOString() })
+    .eq("id", txWithItem?.item_id);
+    .eq("id", txWithItem?.item_id);  });
+
   // Update fraud counters
   if (resolution === "resolved_owner") {
     const { data: borrowerProfile } = await supabaseAdmin
