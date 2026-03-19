@@ -47,7 +47,7 @@ export async function POST(
   }
 
   const now = new Date().toISOString();
-  const inspectionHours = 48;
+  const inspectionHours = 24;
   const inspectionDeadline = new Date(
     Date.now() + inspectionHours * 60 * 60 * 1000
   ).toISOString();
