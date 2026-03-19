@@ -13,6 +13,15 @@ interface DamageAssessment {
   }[];
   recommendation: "release_deposit" | "capture_full" | "capture_partial" | "needs_human_review";
   recommended_capture_percent?: number | null;
+  adaptive_threshold?: {
+    category: string;
+    condition_adjustment: number;
+    effective_auto_resolve: number;
+    normal_wear_description: string;
+    final_recommendation: string;
+    auto_resolved: boolean;
+    reason: string;
+  };
 }
 
 interface AIDamageResultProps {
@@ -83,7 +92,8 @@ export default function AIDamageResult({
     );
   }
 
-  const rec = recommendationLabels[assessment.recommendation] ?? recommendationLabels.needs_human_review;
+  const finalRec = assessment.adaptive_threshold?.final_recommendation ?? assessment.recommendation;
+  const rec = recommendationLabels[finalRec] ?? recommendationLabels.needs_human_review;
 
   return (
     <div className="rounded-2xl border border-inventory-200 overflow-hidden">
@@ -114,6 +124,30 @@ export default function AIDamageResult({
             </p>
           )}
         </div>
+
+        {/* Adaptive Threshold Info */}
+        {assessment.adaptive_threshold && (
+          <div className="px-4 py-3 rounded-xl bg-inventory-50 border border-inventory-200">
+            <p className="text-xs font-bold text-inventory-600 mb-1">
+              Adaptive Threshold: {assessment.adaptive_threshold.category}
+            </p>
+            <p className="text-[11px] text-inventory-500 mb-1">
+              {assessment.adaptive_threshold.reason}
+            </p>
+            <div className="flex gap-3 text-[10px] text-inventory-400">
+              <span>Auto-resolve: {assessment.adaptive_threshold.effective_auto_resolve}%</span>
+              {assessment.adaptive_threshold.condition_adjustment !== 0 && (
+                <span>Condition adj: {assessment.adaptive_threshold.condition_adjustment > 0 ? "+" : ""}{assessment.adaptive_threshold.condition_adjustment}</span>
+              )}
+              <span className={assessment.adaptive_threshold.auto_resolved ? "text-green-600 font-medium" : "text-amber-600 font-medium"}>
+                {assessment.adaptive_threshold.auto_resolved ? "Auto-resolved" : "Manual review needed"}
+              </span>
+            </div>
+            <p className="text-[10px] text-inventory-400 mt-1 italic">
+              Normal wear for this category: {assessment.adaptive_threshold.normal_wear_description}
+            </p>
+          </div>
+        )}
 
         {/* Findings */}
         {assessment.findings.length > 0 && (

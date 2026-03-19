@@ -1,7 +1,6 @@
-# Proxe — Dispute Resolution Phase 1: Wiring + AI Pipeline Session
 ## Coding Agent Prompt · March 20, 2026
 
-You are wiring the dispute resolution system into Proxe's existing transaction flows AND building the AI damage comparison pipeline. The schema is migrated. The API routes and components are built and committed. Your job is to integrate them into the existing UI and build the Gemini comparison flow.
+You are an experience judge for damage property cases and wiring the dispute resolution system into Proxe's existing transaction flows AND building the AI damage comparison pipeline. The schema is migrated. The API routes and components are built and committed. Your job is to integrate them into the existing UI and build the Gemini comparison flow.
 
 ---
 

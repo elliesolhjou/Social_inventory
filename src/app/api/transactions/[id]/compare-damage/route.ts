@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getAdaptiveThreshold, applyAdaptiveThreshold } from "@/lib/adaptive_thresholds";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -190,16 +191,22 @@ export async function POST(
     taskDescription = `These are BEFORE photos of the item. No after photos are available yet. Describe the current condition for baseline documentation.`;
   }
 
+  // Get adaptive threshold for this item's category + condition
+  const itemCategory = (item.ai_category as string) ?? "general";
+  const itemCondition = null; // Could come from item.ai_condition if available
+  const threshold = getAdaptiveThreshold(itemCategory, itemCondition);
+
   const prompt = `You are a damage assessment AI for Proxe, a peer-to-peer lending platform.
 
 ITEM: "${item.title}"
+CATEGORY: ${threshold.category}
 ${checklistContext}
 
 TASK: ${taskDescription}
 
 RULES:
 - Only flag CLEAR, VISIBLE differences or damage.
-- Normal wear (minor scuffs, dust) is NOT damage.
+- For this item category (${threshold.category}), normal wear includes: "${threshold.normal_wear_description}" — do NOT flag these as damage.
 - If you cannot clearly see damage or the photos are ambiguous, set confidence below 70 and recommend needs_human_review.
 - Be specific about WHAT changed and WHERE on the item.
 - Be fair to both parties.
@@ -246,13 +253,34 @@ Respond ONLY in JSON, no markdown, no backticks:
 
     const assessment = JSON.parse(cleaned);
 
+    // Patent Step 404: Apply adaptive threshold
+    const thresholdResult = applyAdaptiveThreshold(
+      assessment,
+      itemCategory,
+      itemCondition
+    );
+
+    // Combine raw assessment + threshold result for storage
+    const fullReport = {
+      ...assessment,
+      adaptive_threshold: {
+        category: threshold.category,
+        condition_adjustment: thresholdResult.threshold_applied.condition_adjustment,
+        effective_auto_resolve: thresholdResult.threshold_applied.effective_auto_resolve,
+        normal_wear_description: threshold.normal_wear_description,
+        final_recommendation: thresholdResult.final_recommendation,
+        auto_resolved: thresholdResult.auto_resolved,
+        reason: thresholdResult.reason,
+      },
+    };
+
     // Store on V3 evidence row
     await supabaseAdmin
       .from("transaction_evidence")
-      .update({ ai_damage_report: assessment })
+      .update({ ai_damage_report: fullReport })
       .eq("id", v3Evidence.id);
 
-    return NextResponse.json({ success: true, assessment });
+    return NextResponse.json({ success: true, assessment: fullReport });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "AI comparison failed";
     return NextResponse.json(
