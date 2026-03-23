@@ -12,8 +12,7 @@
 const VISION_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 const EMBED_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent";
-/**
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent"; /**
  * Use Gemini vision to generate a detailed text description of an image,
  * then embed that description with text-embedding-004.
  *
@@ -21,7 +20,7 @@ const EMBED_URL =
  * @returns 768-dimensional float array
  */
 export async function generateImageEmbedding(
-  imageBuffer: Buffer
+  imageBuffer: Buffer,
 ): Promise<number[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -62,14 +61,14 @@ export async function generateImageEmbedding(
   if (!visionResponse.ok) {
     const errText = await visionResponse.text();
     throw new Error(
-      `Gemini vision error (${visionResponse.status}): ${errText}`
+      `Gemini vision error (${visionResponse.status}): ${errText}`,
     );
   }
 
   const visionData = await visionResponse.json();
   console.log(
     "Gemini vision raw response:",
-    JSON.stringify(visionData).slice(0, 500)
+    JSON.stringify(visionData).slice(0, 500),
   );
 
   const description =
@@ -79,7 +78,7 @@ export async function generateImageEmbedding(
     const finishReason = visionData?.candidates?.[0]?.finishReason;
     const blockReason = visionData?.promptFeedback?.blockReason;
     throw new Error(
-      `Gemini returned empty description. finishReason: ${finishReason}, blockReason: ${blockReason}`
+      `Gemini returned empty description. finishReason: ${finishReason}, blockReason: ${blockReason}`,
     );
   }
 
@@ -104,18 +103,17 @@ export async function generateTextEmbedding(text: string): Promise<number[]> {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "models/text-embedding-004",
+      model: "models/gemini-embedding-001",
       content: {
         parts: [{ text }],
       },
+      outputDimensionality: 768,
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(
-      `Gemini embedding error (${response.status}): ${errText}`
-    );
+    throw new Error(`Gemini embedding error (${response.status}): ${errText}`);
   }
 
   const data = await response.json();
@@ -123,7 +121,7 @@ export async function generateTextEmbedding(text: string): Promise<number[]> {
 
   if (!Array.isArray(embedding) || embedding.length === 0) {
     throw new Error(
-      `Unexpected embedding shape: ${JSON.stringify(data).slice(0, 200)}`
+      `Unexpected embedding shape: ${JSON.stringify(data).slice(0, 200)}`,
     );
   }
 
