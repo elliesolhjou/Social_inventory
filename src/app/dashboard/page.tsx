@@ -257,13 +257,19 @@ export default function Dashboard() {
   // Merge: if semantic results exist, reorder items by semantic ranking
   // Items found by semantic search go first, then text-only matches
   const filteredItems = (() => {
-    if (!searchQuery.trim() || semanticResults.length === 0) return textFilteredItems;
-    const semanticIds = new Set(semanticResults.map((r: any) => r.id));
-    const semanticOrder = semanticResults
-      .map((r: any) => items.find((i) => i.id === r.id))
-      .filter(Boolean) as typeof items;
-    const textOnly = textFilteredItems.filter((i) => !semanticIds.has(i.id));
-    return [...semanticOrder, ...textOnly];
+    if (!searchQuery.trim()) return textFilteredItems;
+    // If semantic returned results, show those only
+    if (semanticResults.length > 0) {
+      // Only show results within 85% of the top result's score
+      const topScore = semanticResults[0].similarity;
+      const cutoff = topScore * 0.85;
+      const relevant = semanticResults.filter((r: any) => r.similarity >= cutoff);
+      return relevant
+        .map((r: any) => items.find((i) => i.id === r.id))
+        .filter(Boolean) as typeof items;
+    }
+    // Otherwise fall back to text search (catches exact matches like "vacuum", "dyson")
+    return textFilteredItems;
   })();
 
   const isSearching = searchQuery.trim().length > 0;

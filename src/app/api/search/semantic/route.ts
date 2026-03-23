@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         query_embedding: JSON.stringify(queryEmbedding),
         search_building_id: profile.building_id,
         filter_category: null,
-        match_threshold: 0.3,
+        match_threshold: 0.5,
         match_count: 12,
       }
     );
