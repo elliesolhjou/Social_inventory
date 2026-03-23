@@ -107,6 +107,8 @@ export default function Dashboard() {
   const [broadcastCount, setBroadcastCount] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [showVisualSearch, setShowVisualSearch] = useState(false);
+  const [semanticResults, setSemanticResults] = useState<any[]>([]);
+  const [semanticLoading, setSemanticLoading] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -210,19 +212,59 @@ export default function Dashboard() {
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
     setActiveCategory("All");
+    setSemanticResults([]);
   }, []);
+
+  // Semantic search — fires after 600ms pause
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 3) {
+      setSemanticResults([]);
+      return;
+    }
+    setSemanticLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/search/semantic", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: searchQuery.trim() }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setSemanticResults(data.results || []);
+        }
+      } catch (err) {
+        console.error("Semantic search error:", err);
+      } finally {
+        setSemanticLoading(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const categories = [
     "All",
     ...Array.from(new Set(items.map((i) => i.category))),
   ];
 
-  const filteredItems = items.filter((item) => {
+  const textFilteredItems = items.filter((item) => {
     const categoryMatch =
       activeCategory === "All" || item.category === activeCategory;
     const searchMatch = matchesSearch(item, searchQuery);
     return categoryMatch && searchMatch;
   });
+
+  // Merge: if semantic results exist, reorder items by semantic ranking
+  // Items found by semantic search go first, then text-only matches
+  const filteredItems = (() => {
+    if (!searchQuery.trim() || semanticResults.length === 0) return textFilteredItems;
+    const semanticIds = new Set(semanticResults.map((r: any) => r.id));
+    const semanticOrder = semanticResults
+      .map((r: any) => items.find((i) => i.id === r.id))
+      .filter(Boolean) as typeof items;
+    const textOnly = textFilteredItems.filter((i) => !semanticIds.has(i.id));
+    return [...semanticOrder, ...textOnly];
+  })();
 
   const isSearching = searchQuery.trim().length > 0;
 
