@@ -49,6 +49,12 @@ export default function MagicUpload() {
 
       if (!response.ok) {
         const err = await response.json();
+
+        // Handle prohibited items
+        if (response.status === 403 && err.prohibited) {
+          throw new Error(err.prohibited_reason || "This item is not permitted on Proxe.");
+        }
+
         throw new Error(err.error || "Vision analysis failed");
       }
 
@@ -67,6 +73,47 @@ export default function MagicUpload() {
     }
   }, []);
 
+  // ── Helper: upload base64 frame to Supabase Storage ─────────────────────
+  async function uploadFrameToStorage(
+    supabase: ReturnType<typeof createClient>,
+    itemId: string,
+    frame: string,
+    index: number
+  ): Promise<string | null> {
+    try {
+      // Strip data URI prefix and convert to blob
+      const base64Data = frame.replace(/^data:image\/\w+;base64,/, "");
+      const byteArray = Uint8Array.from(atob(base64Data), (c) =>
+        c.charCodeAt(0)
+      );
+      const blob = new Blob([byteArray], { type: "image/jpeg" });
+
+      const filePath = `${itemId}/${index}.jpg`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("item-images")
+        .upload(filePath, blob, {
+          contentType: "image/jpeg",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error(`Failed to upload frame ${index}:`, uploadError);
+        return null;
+      }
+
+      // Get public URL
+      const { data } = supabase.storage
+        .from("item-images")
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (err) {
+      console.error(`Frame ${index} upload error:`, err);
+      return null;
+    }
+  }
+
   // Step 3: Publish item to Supabase
   const handlePublish = useCallback(
     async (formData: ItemFormData) => {
@@ -76,26 +123,27 @@ export default function MagicUpload() {
       try {
         const supabase = createClient();
 
-        // TODO: In production, get owner_id from auth session
-        // For dev, pick a random profile
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id")
-          .limit(20);
+        // Get actual logged-in user
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-        const randomOwner =
-          profiles?.[Math.floor(Math.random() * (profiles?.length ?? 1))];
-
-        if (!randomOwner) {
-          throw new Error("No profiles found. Run the seed script first.");
+        if (!user) {
+          throw new Error("You must be signed in to list an item.");
         }
 
-        // Get building ID
-        const { data: building } = await supabase
-          .from("buildings")
-          .select("id")
+        // Get user's building ID from profile
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("building_id")
+          .eq("id", user.id)
           .single();
 
+        if (!profile?.building_id) {
+          throw new Error("No building associated with your profile.");
+        }
+
+        // Insert the item first (we need the ID for storage paths)
         const { data: newItem, error: insertError } = await supabase
           .from("items")
           .insert({
@@ -104,13 +152,14 @@ export default function MagicUpload() {
             ai_description: formData.ai_description,
             category: formData.category,
             subcategory: formData.subcategory,
-            ai_condition: formData.condition,            deposit_cents: formData.suggested_deposit_cents,
+            ai_condition: formData.condition,
+            deposit_cents: formData.suggested_deposit_cents,
             max_borrow_days: formData.max_borrow_days,
             rules: formData.rules,
             status: "available",
             times_borrowed: 0,
-            owner_id: randomOwner.id,
-            building_id: building?.id,
+            owner_id: user.id,
+            building_id: profile.building_id,
             metadata: {
               brand: formData.brand,
               model: formData.model,
@@ -124,10 +173,37 @@ export default function MagicUpload() {
 
         if (insertError) throw insertError;
 
-        // ── NEW: Generate CLIP embedding (Fig. 5, Step 503) ────────────
+        // ── Upload frames to Supabase Storage ──────────────────────────
+        if (newItem?.id && frames.length > 0) {
+          const uploadPromises = frames
+            .slice(0, 10) // Max 10 frames
+            .map((frame, i) =>
+              uploadFrameToStorage(supabase, newItem.id, frame, i)
+            );
+
+          const urls = (await Promise.all(uploadPromises)).filter(
+            Boolean
+          ) as string[];
+
+          if (urls.length > 0) {
+            const { error: updateError } = await supabase
+              .from("items")
+              .update({
+                thumbnail_url: urls[0],
+                media_urls: urls,
+              })
+              .eq("id", newItem.id);
+
+            if (updateError) {
+              console.error("Failed to save image URLs:", updateError);
+            }
+          }
+        }
+        // ── END image upload ───────────────────────────────────────────
+
+        // ── Generate CLIP embedding (Fig. 5, Step 503) ─────────────────
         // Fire-and-forget — don't block the publish UX
         if (newItem?.id && frames.length > 0) {
-            console.log("Frame size:", frames[0].length, "chars (~", Math.round(frames[0].length * 0.75 / 1024), "KB)");
           fetch(`/api/items/${newItem.id}/embed`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -136,22 +212,7 @@ export default function MagicUpload() {
             console.error("Embedding generation failed (non-blocking):", err)
           );
         }
-        // ── END NEW ────────────────────────────────────────────────────
-
-        // // Log agent action
-        // await supabase
-        //   .from("agent_logs")
-        //   .insert({
-        //     agent: "VisionAgent",
-        //     action: "magic_upload",
-        //     payload: {
-        //       item_id: newItem?.id,
-        //       confidence: formData.confidence,
-        //       frames_analyzed: frames.length,
-        //     },
-        //     // building_id: building?.id,
-        //   })
-        //   .then(() => {}); // fire and forget
+        // ── END embedding ──────────────────────────────────────────────
 
         setCreatedItemId(newItem?.id ?? null);
         setStep("success");

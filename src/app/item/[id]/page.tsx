@@ -518,10 +518,18 @@ export default function ItemDetailPage() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
         {/* Hero */}
         <div className="glass rounded-3xl overflow-hidden">
-          <div className="h-56 sm:h-72 bg-gradient-to-br from-inventory-100 to-inventory-200 flex items-center justify-center relative">
-            <span className="text-8xl opacity-30">
-              {getCategoryEmoji(item.category)}
-            </span>
+          <div className="h-56 sm:h-72 bg-gradient-to-br from-inventory-100 to-inventory-200 flex items-center justify-center relative overflow-hidden">
+            {item.thumbnail_url ? (
+              <img
+                src={item.thumbnail_url}
+                alt={item.title}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <span className="text-8xl opacity-30">
+                {getCategoryEmoji(item.category)}
+              </span>
+            )}
             <div className="absolute bottom-4 left-4 flex gap-2">
               <ConditionBadge condition={item.ai_condition} />
               {item.times_borrowed > 0 && (
