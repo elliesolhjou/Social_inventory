@@ -20,6 +20,7 @@ type Item = {
   subcategory?: string;
   deposit_cents: number;
   times_borrowed: number;
+  thumbnail_url?: string;
   status: string;
   metadata?: { brand?: string; model?: string };
   owner: {
@@ -467,10 +468,18 @@ export default function Dashboard() {
                   key={item.id}
                   className="glass rounded-2xl overflow-hidden card-hover group block"
                 >
-                  <div className="h-36 sm:h-40 bg-gradient-to-br from-inventory-100 to-inventory-200 flex items-center justify-center">
-                    <span className="text-4xl opacity-50">
-                      {getCategoryEmoji(item.category)}
-                    </span>
+                  <div className="h-36 sm:h-40 bg-gradient-to-br from-inventory-100 to-inventory-200 flex items-center justify-center overflow-hidden">
+                    {(item as any).thumbnail_url ? (
+                      <img
+                        src={(item as any).thumbnail_url}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-4xl opacity-50">
+                        {getCategoryEmoji(item.category)}
+                      </span>
+                    )}
                   </div>
                   <div className="p-4 sm:p-5">
                     <div className="flex items-start justify-between mb-2">
