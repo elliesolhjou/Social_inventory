@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
         query_embedding: JSON.stringify(queryEmbedding),
         search_building_id: profile.building_id,
         filter_category: detectedCategory,
-        match_threshold: 0.3, // Lower for dev/testing — raise to 0.7 in prod
+        match_threshold: 0.8, // Lower for dev/testing — raise to 0.7 in prod
         match_count: 10,
       }
     );

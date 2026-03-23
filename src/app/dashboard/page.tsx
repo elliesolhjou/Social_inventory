@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import SearchBar from "@/components/SearchBar";
 import UserMenu from "@/components/UserMenu";
+import VisualSearchModal from "@/components/search/VisualSearchModal";
 
 type Item = {
   id: string;
@@ -105,6 +106,7 @@ export default function Dashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [broadcastCount, setBroadcastCount] = useState(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const [showVisualSearch, setShowVisualSearch] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -312,7 +314,7 @@ export default function Dashboard() {
 
         {/* Search Bar */}
         <div className="mb-6">
-          <SearchBar onSearch={handleSearch} />
+          <SearchBar onSearch={handleSearch} onVisualSearch={() => setShowVisualSearch(true)} />
         </div>
 
         {/* Category chips */}
@@ -497,6 +499,7 @@ export default function Dashboard() {
           </section>
         )}
       </div>
+      <VisualSearchModal isOpen={showVisualSearch} onClose={() => setShowVisualSearch(false)} />
     </main>
   );
 }
