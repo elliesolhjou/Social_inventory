@@ -52,7 +52,9 @@ export default function MagicUpload() {
 
         // Handle prohibited items
         if (response.status === 403 && err.prohibited) {
-          throw new Error(err.prohibited_reason || "This item is not permitted on Proxe.");
+          throw new Error(
+            err.prohibited_reason || "This item is not permitted on Proxe.",
+          );
         }
 
         throw new Error(err.error || "Vision analysis failed");
@@ -78,13 +80,13 @@ export default function MagicUpload() {
     supabase: ReturnType<typeof createClient>,
     itemId: string,
     frame: string,
-    index: number
+    index: number,
   ): Promise<string | null> {
     try {
       // Strip data URI prefix and convert to blob
       const base64Data = frame.replace(/^data:image\/\w+;base64,/, "");
       const byteArray = Uint8Array.from(atob(base64Data), (c) =>
-        c.charCodeAt(0)
+        c.charCodeAt(0),
       );
       const blob = new Blob([byteArray], { type: "image/jpeg" });
 
@@ -167,6 +169,14 @@ export default function MagicUpload() {
               year: formData.year,
               original_price_cents: formData.original_price_cents,
             },
+            // Spectrum Pricing
+            borrow_available: formData.borrow_available,
+            rent_available: formData.rent_available,
+            sell_available: formData.sell_available,
+            rent_price_day_cents: formData.rent_price_day_cents,
+            rent_price_month_cents: formData.rent_price_month_cents,
+            sell_price_cents: formData.sell_price_cents,
+            estimated_market_value_cents: formData.estimated_market_value_cents,
           })
           .select("id")
           .single();
@@ -178,11 +188,11 @@ export default function MagicUpload() {
           const uploadPromises = frames
             .slice(0, 10) // Max 10 frames
             .map((frame, i) =>
-              uploadFrameToStorage(supabase, newItem.id, frame, i)
+              uploadFrameToStorage(supabase, newItem.id, frame, i),
             );
 
           const urls = (await Promise.all(uploadPromises)).filter(
-            Boolean
+            Boolean,
           ) as string[];
 
           if (urls.length > 0) {
@@ -209,7 +219,7 @@ export default function MagicUpload() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ frame: frames[0] }),
           }).catch((err) =>
-            console.error("Embedding generation failed (non-blocking):", err)
+            console.error("Embedding generation failed (non-blocking):", err),
           );
         }
         // ── END embedding ──────────────────────────────────────────────
