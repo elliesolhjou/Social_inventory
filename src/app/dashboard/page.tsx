@@ -7,6 +7,10 @@ import { createClient } from "@/lib/supabase/client";
 import SearchBar from "@/components/SearchBar";
 import UserMenu from "@/components/UserMenu";
 import VisualSearchModal from "@/components/search/VisualSearchModal";
+import {
+  SustainableLivingCard,
+  NeighborPointsCard,
+} from "@/components/dashboard/ImpactCards";
 
 type Item = {
   id: string;
@@ -190,7 +194,12 @@ export default function Dashboard() {
       .channel("dashboard-notifications")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `recipient_id=eq.${userId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `recipient_id=eq.${userId}`,
+        },
         () => setUnreadCount((c) => c + 1),
       )
       .on(
@@ -263,7 +272,9 @@ export default function Dashboard() {
       // Only show results within 85% of the top result's score
       const topScore = semanticResults[0].similarity;
       const cutoff = topScore * 0.85;
-      const relevant = semanticResults.filter((r: any) => r.similarity >= cutoff);
+      const relevant = semanticResults.filter(
+        (r: any) => r.similarity >= cutoff,
+      );
       return relevant
         .map((r: any) => items.find((i) => i.id === r.id))
         .filter(Boolean) as typeof items;
@@ -339,7 +350,7 @@ export default function Dashboard() {
               )}
             </Link>
             {/* Inbox icon with unread badge */}
-            
+
             <span className="text-sm text-inventory-500 hidden sm:block">
               The Meridian
             </span>
@@ -362,7 +373,10 @@ export default function Dashboard() {
 
         {/* Search Bar */}
         <div className="mb-6">
-          <SearchBar onSearch={handleSearch} onVisualSearch={() => setShowVisualSearch(true)} />
+          <SearchBar
+            onSearch={handleSearch}
+            onVisualSearch={() => setShowVisualSearch(true)}
+          />
         </div>
 
         {/* Category chips */}
@@ -514,7 +528,15 @@ export default function Dashboard() {
             </div>
           )}
         </section>
-
+        {/* Impact & Points */}
+        {!isSearching && (
+          <section className="mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SustainableLivingCard />
+              <NeighborPointsCard />
+            </div>
+          </section>
+        )}
         {/* Top Neighbors */}
         {!isSearching && (
           <section className="mb-8">
@@ -551,7 +573,10 @@ export default function Dashboard() {
           </section>
         )}
       </div>
-      <VisualSearchModal isOpen={showVisualSearch} onClose={() => setShowVisualSearch(false)} />
+      <VisualSearchModal
+        isOpen={showVisualSearch}
+        onClose={() => setShowVisualSearch(false)}
+      />
     </main>
   );
 }
