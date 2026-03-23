@@ -16,6 +16,14 @@ type Item = {
   subcategory: string;
   ai_condition: string;
   deposit_cents: number;
+  thumbnail_url: string | null;
+  borrow_available: boolean;
+  rent_available: boolean;
+  sell_available: boolean;
+  rent_price_day_cents: number | null;
+  rent_price_month_cents: number | null;
+  sell_price_cents: number | null;
+  estimated_market_value_cents: number | null;
   max_borrow_days: number;
   rules: string;
   status: string;
@@ -567,32 +575,78 @@ export default function ItemDetailPage() {
         </div>
 
         {/* Borrow Details */}
+        {/* Pricing Details */}
         <div className="glass rounded-3xl p-6">
           <h2 className="font-display text-sm font-bold text-inventory-400 uppercase tracking-widest mb-4">
-            Borrow Details
+            Pricing
           </h2>
-          <div className="grid grid-cols-3 gap-4 mb-5">
-            <div className="text-center p-4 rounded-2xl bg-inventory-50">
-              <p className="text-2xl font-display font-bold text-accent">
-                ${(item.deposit_cents / 100).toFixed(0)}
-              </p>
-              <p className="text-xs text-inventory-400 mt-1">Deposit</p>
-            </div>
-            <div className="text-center p-4 rounded-2xl bg-inventory-50">
-              <p className="text-2xl font-display font-bold">
-                {item.max_borrow_days}
-              </p>
-              <p className="text-xs text-inventory-400 mt-1">Max days</p>
-            </div>
-            <div className="text-center p-4 rounded-2xl bg-inventory-50">
-              <p className="text-2xl font-display font-bold text-trust-high">
-                $0
-              </p>
-              <p className="text-xs text-inventory-400 mt-1">Fee</p>
-            </div>
+          <div className="space-y-3">
+            {/* Borrow */}
+            {(item.borrow_available ?? true) && (
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-emerald-50 border border-emerald-100">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🤝</span>
+                  <div>
+                    <p className="font-display font-bold text-sm text-emerald-800">Borrow</p>
+                    <p className="text-xs text-emerald-600">Free · up to {item.max_borrow_days} days</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-display font-bold text-lg text-accent">${(item.deposit_cents / 100).toFixed(0)}</p>
+                  <p className="text-[10px] text-inventory-400">refundable deposit</p>
+                </div>
+              </div>
+            )}
+            {/* Rent */}
+            {item.rent_available && (
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-blue-50 border border-blue-100">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">📅</span>
+                  <div>
+                    <p className="font-display font-bold text-sm text-blue-800">Rent</p>
+                    <p className="text-xs text-blue-600">
+                      ${item.deposit_cents ? (item.deposit_cents / 100).toFixed(0) : "0"} deposit
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  {item.rent_price_day_cents && (
+                    <p className="font-display font-bold text-lg text-blue-700">${(item.rent_price_day_cents / 100).toFixed(0)}<span className="text-xs font-normal">/day</span></p>
+                  )}
+                  {item.rent_price_month_cents && (
+                    <p className="text-xs text-blue-500">${(item.rent_price_month_cents / 100).toFixed(0)}/month</p>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Buy */}
+            {item.sell_available && item.sell_price_cents && (
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-purple-50 border border-purple-100">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">🏷️</span>
+                  <div>
+                    <p className="font-display font-bold text-sm text-purple-800">Buy</p>
+                    <p className="text-xs text-purple-600">Yours to keep</p>
+                  </div>
+                </div>
+                <p className="font-display font-bold text-lg text-purple-700">${(item.sell_price_cents / 100).toFixed(0)}</p>
+              </div>
+            )}
+            {/* Rent-to-Own */}
+            {item.rent_available && item.sell_available && item.sell_price_cents && (
+              <div className="p-3 rounded-2xl bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-100">
+                <div className="flex items-center gap-2">
+                  <span>🔄</span>
+                  <p className="text-xs text-blue-800">
+                    <span className="font-bold">Rent-to-Own:</span> 80% of rental fees apply toward the ${(item.sell_price_cents / 100).toFixed(0)} purchase price.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
+          {/* Rules */}
           {item.rules && (
-            <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-100">
+            <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-50 border border-amber-100 mt-4">
               <span className="text-lg mt-0.5">📋</span>
               <p className="text-sm text-amber-800">{item.rules}</p>
             </div>
