@@ -401,7 +401,11 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xs font-bold text-inventory-400 uppercase tracking-widest">
               {isSearching
-                ? `Results for "${searchQuery}"`
+                ? semanticResults.length > 0
+                  ? `AI results for "${searchQuery}"`
+                  : semanticLoading
+                    ? `Searching "${searchQuery}"...`
+                    : `Results for "${searchQuery}"`
                 : activeCategory === "All"
                   ? "Available Now"
                   : activeCategory}
