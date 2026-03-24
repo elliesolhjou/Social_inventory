@@ -156,6 +156,16 @@ export default function PayoutsPage() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("stripe_connected") === "true") {
+      fetch("/api/payouts/stripe/status")
+        .then((res) => res.json())
+        .then(() => fetchData());
+      window.history.replaceState({}, "", "/payouts");
+    }
+  }, []);
+
+  useEffect(() => {
     fetchData();
   }, [fetchData]);
 
@@ -369,6 +379,16 @@ export default function PayoutsPage() {
                           setNewMethod(m);
                           setError(null);
                           try {
+                            if (m === "stripe_connect") {
+                              const res = await fetch("/api/payouts/stripe/onboard", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                              });
+                              const data = await res.json();
+                              if (!res.ok) throw new Error(data.error);
+                              window.location.href = data.url;
+                              return;
+                            }
                             const res = await fetch("/api/payouts/methods", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
