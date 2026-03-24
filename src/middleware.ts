@@ -67,5 +67,7 @@ export const config = {
     "/item/:path*",
     "/profile/:path*",
     "/onboarding/:path*",
+    "/disputes/:path*",
+    "/support/:path*",
   ],
 };
