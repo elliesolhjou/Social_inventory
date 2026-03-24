@@ -143,15 +143,19 @@ export default function Dashboard() {
       }
       const itemSelect =
         "*, owner:profiles(id, username, display_name, trust_score, reputation_tags)";
-
+      
       let communityQuery = supabase
         .from("items")
         .select(itemSelect)
         .eq("status", "available")
         .order("created_at", { ascending: false })
         .limit(100);
-      if (userBuildingId) communityQuery = communityQuery.eq("building_id", userBuildingId);
 
+      if (userBuildingId) {
+        communityQuery = communityQuery.or(
+          `building_id.eq.${userBuildingId},owner_id.eq.00000000-0000-0000-0000-000000000002`
+        );
+      }
       const [communityRes, myItemsRes, profilesRes, statsRes] =
         await Promise.all([
           communityQuery,
@@ -168,6 +172,7 @@ export default function Dashboard() {
           supabase
             .from("profiles")
             .select("*")
+            .neq("id", "00000000-0000-0000-0000-000000000001")
             .order("trust_score", { ascending: false })
             .limit(10),
           supabase.from("transactions").select("id", { count: "exact" }),
@@ -559,6 +564,44 @@ export default function Dashboard() {
             </div>
           )}
         </section>
+{/* Proxe Concierge Banner */}
+        {!isSearching && (
+          <section className="mb-8">
+            <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-accent/5 via-purple-50/30 to-blue-50/30 border border-accent/10 p-5">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-accent flex items-center justify-center flex-shrink-0">
+                  <span className="text-white font-display font-black text-lg">P</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-display font-bold text-sm mb-1">
+                    Can't find what you need?
+                  </h3>
+                  <p className="text-xs text-inventory-500 leading-relaxed mb-3">
+                    Proxe Concierge has moving carts, party supplies, cleaning equipment and more — delivered to your door and picked up when you're done.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const event = new CustomEvent("open-miles");
+                        window.dispatchEvent(event);
+                      }}
+                      className="px-4 py-2 bg-accent text-white text-xs font-display font-bold rounded-xl hover:bg-accent-dark transition-colors"
+                    >
+                      Ask Miles →
+                    </button>
+                    <Link
+                      href="/profile/00000000-0000-0000-0000-000000000002"
+                      className="px-4 py-2 bg-white text-inventory-600 text-xs font-display font-bold rounded-xl border border-inventory-200 hover:border-accent/30 transition-colors"
+                    >
+                      Browse Concierge Items
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Impact & Points */}
         {!isSearching && (
           <section className="mb-8">

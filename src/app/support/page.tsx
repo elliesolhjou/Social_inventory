@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
 
 // Founder's profile ID — messages go to you
-const FOUNDER_ID = "e7eb677b-a7a3-401c-a682-9775f1303a52";
+const SUPPORT_ID = "00000000-0000-0000-0000-000000000001";
 
 type FaqItem = {
   q: string;
@@ -70,7 +70,7 @@ export default function SupportPage() {
 
     await supabase.from("messages").insert({
       sender_id: userId,
-      recipient_id: FOUNDER_ID,
+      recipient_id: SUPPORT_ID,
       message_type: "support_request",
       content: `[Support — ${category}] ${message.trim()}`,
       topic: "support",
