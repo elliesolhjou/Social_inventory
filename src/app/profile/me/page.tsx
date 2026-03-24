@@ -633,6 +633,46 @@ export default function MyProfilePage() {
           </div>
         </div>
 
+        {/* Lending Dashboard */}
+        <div className="glass rounded-3xl p-5 mb-4 bg-gradient-to-r from-accent/5 via-purple-50/30 to-blue-50/30 border border-accent/10">
+          <p className="text-[10px] font-bold text-accent uppercase tracking-widest mb-3">Governance & Trust</p>
+          <h3 className="font-display font-black text-xl mb-4">Lending Dashboard</h3>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-inventory-500 uppercase tracking-wider">Impact Score</span>
+            <span className="font-display font-black text-2xl text-accent">{profile.trust_score.toFixed(0)}</span>
+          </div>
+          <div className="w-full h-2 rounded-full bg-inventory-100 overflow-hidden mb-1">
+            <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${profile.trust_score}%` }} />
+          </div>
+          <p className="text-[10px] text-inventory-400 mb-4">
+            {profile.trust_score >= 90 ? "Top lender! Keep it up." :
+             profile.trust_score >= 70 ? "Great standing. Continue fulfilling requests." :
+             "Complete more transactions to boost your score."}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-xl p-3 text-center">
+              <p className="text-[10px] text-inventory-400 uppercase tracking-wider mb-1">Revenue</p>
+              <p className="font-display font-black text-lg text-accent">$0.00</p>
+              <p className="text-[10px] text-inventory-300">Payouts coming soon</p>
+            </div>
+            <div className="bg-white rounded-xl p-3 text-center">
+              <p className="text-[10px] text-inventory-400 uppercase tracking-wider mb-1">Active Lends</p>
+              <p className="font-display font-black text-lg">{lending.length}</p>
+              <p className="text-[10px] text-inventory-300">{lendingCount} total</p>
+            </div>
+          </div>
+          <div className="mt-4 p-3 rounded-xl bg-white border border-inventory-100 flex items-center gap-3">
+            <span className="text-xl">💳</span>
+            <div className="flex-1">
+              <p className="text-xs font-bold text-inventory-700">Connect your bank</p>
+              <p className="text-[10px] text-inventory-400">Set up payouts for rental & sale earnings</p>
+            </div>
+            <button className="px-3 py-1.5 bg-accent text-white text-[10px] font-bold rounded-lg opacity-50 cursor-not-allowed">
+              Soon
+            </button>
+          </div>
+        </div>
+    
         {/* ── Four-tab section ──────────────────────────────────── */}
         <div className="glass rounded-3xl overflow-hidden">
           {/* Tabs */}
