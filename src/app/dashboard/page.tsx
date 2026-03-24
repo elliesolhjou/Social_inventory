@@ -101,6 +101,7 @@ function matchesSearch(item: Item, query: string): boolean {
 }
 
 export default function Dashboard() {
+  const [buildingName, setBuildingName] = useState("My Building");
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -123,17 +124,38 @@ export default function Dashboard() {
       } = await supabase.auth.getUser();
       if (user) setUserId(user.id);
 
+      let userBuildingId: string | null = null;
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("building_id")
+          .eq("id", user.id)
+          .single();
+        if (profile?.building_id) {
+          userBuildingId = profile.building_id;
+          const { data: building } = await supabase
+            .from("buildings")
+            .select("name")
+            .eq("id", profile.building_id)
+            .single();
+          if (building) setBuildingName(building.name);
+        }
+      }
       const itemSelect =
         "*, owner:profiles(id, username, display_name, trust_score, reputation_tags)";
 
+      let communityQuery = supabase
+        .from("items")
+        .select(itemSelect)
+        .eq("status", "available")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (userBuildingId) communityQuery = communityQuery.eq("building_id", userBuildingId);
+
       const [communityRes, myItemsRes, profilesRes, statsRes] =
         await Promise.all([
-          supabase
-            .from("items")
-            .select(itemSelect)
-            .eq("status", "available")
-            .order("created_at", { ascending: false })
-            .limit(100),
+          communityQuery,
+
           // Always fetch the current user's items separately so they're never cut off
           user
             ? supabase
@@ -353,7 +375,7 @@ export default function Dashboard() {
             {/* Inbox icon with unread badge */}
 
             <span className="text-sm text-inventory-500 hidden sm:block">
-              The Meridian
+              {buildingName}
             </span>
             <UserMenu />
           </div>

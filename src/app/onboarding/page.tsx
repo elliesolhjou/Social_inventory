@@ -120,6 +120,7 @@ export default function OnboardingPage() {
       .from("buildings")
       .insert({
         name: newBuildingName.trim(),
+        address: newBuildingAddress.trim() || null,
         resident_count: 1,
       })
       .select("id, name")
