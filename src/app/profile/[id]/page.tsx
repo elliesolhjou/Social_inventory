@@ -307,8 +307,12 @@ export default function PublicProfilePage() {
                         href={`/item/${item.id}`}
                         className="glass rounded-2xl p-4 flex items-center gap-4 card-hover block"
                       >
-                        <div className="w-12 h-12 rounded-xl bg-inventory-100 flex items-center justify-center flex-shrink-0 text-xl">
-                          {getCategoryEmoji(item.category)}
+                        <div className="w-12 h-12 rounded-xl bg-inventory-100 flex items-center justify-center flex-shrink-0 text-xl overflow-hidden">
+                          {item.thumbnail_url ? (
+                            <img src={item.thumbnail_url} alt={item.title} className="w-full h-full object-cover" />
+                          ) : (
+                            getCategoryEmoji(item.category)
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-display font-bold text-sm truncate">{item.title}</p>
@@ -475,8 +479,12 @@ export default function PublicProfilePage() {
                     href={`/item/${item.id}`}
                     className="glass rounded-2xl p-4 flex items-center gap-4 card-hover block"
                   >
-                    <div className="w-12 h-12 rounded-xl bg-inventory-100 flex items-center justify-center flex-shrink-0 text-xl">
-                      {getCategoryEmoji(item.category)}
+                    <div className="w-12 h-12 rounded-xl bg-inventory-100 flex items-center justify-center flex-shrink-0 text-xl overflow-hidden">
+                      {item.thumbnail_url ? (
+                        <img src={item.thumbnail_url} alt={item.title} className="w-full h-full object-cover" />
+                      ) : (
+                        getCategoryEmoji(item.category)
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-display font-bold text-sm truncate">{item.title}</p>

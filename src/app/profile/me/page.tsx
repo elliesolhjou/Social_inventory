@@ -281,7 +281,7 @@ export default function MyProfilePage() {
       if (activeTab === "items" && myItems.length === 0) {
         const { data } = await supabase
           .from("items")
-          .select("id, title, category, deposit_cents, status, ai_condition, availability_status")
+          .select("id, title, category, deposit_cents, status, ai_condition, availability_status, thumbnail_url")
           .eq("owner_id", profile.id)
           .order("created_at", { ascending: false });
         setMyItems(data ?? []);
@@ -716,8 +716,12 @@ export default function MyProfilePage() {
                           href={`/item/${item.id}`}
                           className="flex items-center gap-4 p-4 rounded-2xl border border-inventory-100 hover:border-inventory-200 transition-colors"
                         >
-                          <div className="w-12 h-12 rounded-xl bg-inventory-50 flex items-center justify-center text-xl">
-                            {getCategoryEmoji(item.category)}
+                          <div className="w-12 h-12 rounded-xl bg-inventory-50 flex items-center justify-center text-xl overflow-hidden">
+                            {(item as any).thumbnail_url ? (
+                              <img src={(item as any).thumbnail_url} alt={item.title} className="w-full h-full object-cover" />
+                            ) : (
+                              getCategoryEmoji(item.category)
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-display font-semibold text-sm truncate">
