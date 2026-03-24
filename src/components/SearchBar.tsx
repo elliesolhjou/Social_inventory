@@ -34,7 +34,7 @@ export default function SearchBar({
       {/* Search icon */}
       <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
         <svg
-          className="w-4 h-4 text-inventory-400"
+          className="w-5 h-5 text-[#8f7067]"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -54,19 +54,19 @@ export default function SearchBar({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder={placeholder}
-        className="w-full pl-10 pr-20 py-3 rounded-2xl border-2 border-inventory-200 bg-white/80 backdrop-blur text-sm focus:border-accent focus:outline-none transition-colors placeholder:text-inventory-400 font-body"
+        className="w-full pl-12 pr-24 py-3.5 rounded-full border border-[#e6e2de] bg-white text-[#1c1b1a] text-sm focus:border-[#ae3200] focus:ring-2 focus:ring-[#ae3200]/20 focus:outline-none transition-all placeholder:text-[#8f7067] font-['Be_Vietnam_Pro'] shadow-sm"
       />
 
       {/* Right side buttons */}
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
         {/* Clear button */}
         {query && (
           <button
             onClick={clear}
-            className="w-6 h-6 rounded-full bg-inventory-200 flex items-center justify-center hover:bg-inventory-300 transition-colors"
+            className="w-7 h-7 rounded-full bg-[#ebe7e4] flex items-center justify-center hover:bg-[#ddd9d6] transition-colors"
           >
             <svg
-              className="w-3 h-3 text-inventory-600"
+              className="w-3.5 h-3.5 text-[#5b4038]"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -85,11 +85,11 @@ export default function SearchBar({
         {onVisualSearch && (
           <button
             onClick={onVisualSearch}
-            className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center hover:bg-accent/20 transition-colors"
+            className="w-8 h-8 rounded-full bg-[#ae3200]/10 flex items-center justify-center hover:bg-[#ae3200]/20 transition-colors"
             title="Search by photo"
           >
             <svg
-              className="w-4 h-4 text-accent"
+              className="w-4 h-4 text-[#ae3200]"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

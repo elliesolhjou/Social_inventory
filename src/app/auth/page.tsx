@@ -95,84 +95,110 @@ export default function AuthPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-white via-inventory-50 to-orange-50/30">
-      <div className="w-full max-w-sm">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2">
-            <div className="w-10 h-10 rounded-2xl bg-accent flex items-center justify-center">
-              <span className="font-display font-black text-white text-lg">
-                P
-              </span>
-            </div>
-            <span className="font-display font-bold text-xl tracking-tight">
-              Proxe
-            </span>
-          </Link>
-          <p className="text-inventory-400 text-sm mt-2">
-            {mode === "signup"
-              ? "Create your account"
-              : mode === "magic"
-                ? "Sign in without a password"
-                : "Welcome back"}
-          </p>
-        </div>
+    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-[#fdf9f5]">
+      {/* Header */}
+      <header className="flex items-center justify-between p-5 sm:p-6">
+        <Link
+          href="/"
+          className="flex items-center justify-center w-11 h-11 rounded-full hover:bg-[#ebe7e4] transition-colors text-[#1c1b1a]"
+          aria-label="Go back"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+          </svg>
+        </Link>
+        <Link href="/" className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-[#ae3200] flex items-center justify-center">
+            <svg className="w-[18px] h-[18px] text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+            </svg>
+          </div>
+          <span className="font-['Plus_Jakarta_Sans'] font-bold text-xl tracking-tight text-[#ae3200]">
+            Proxe
+          </span>
+        </Link>
+        <div className="w-11 h-11" /> {/* Spacer for centering */}
+      </header>
 
-        {/* Card */}
-        <div className="glass rounded-3xl p-7 shadow-xl border border-inventory-100">
-          {magicSent ? (
-            <div className="text-center py-4">
-              <div className="w-16 h-16 rounded-full bg-trust-high/10 flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">✉️</span>
-              </div>
-              <h2 className="font-display font-bold text-lg mb-2">
-                Check your email
-              </h2>
-              <p className="text-inventory-500 text-sm leading-relaxed">
-                We sent a magic link to <strong>{email}</strong>. Click it to
-                sign in.
-              </p>
-              <button
-                onClick={() => {
-                  setMagicSent(false);
-                  setMode("signin");
-                }}
-                className="mt-6 text-sm text-accent font-medium hover:underline"
-              >
-                Back to sign in
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* Mode tabs */}
-              <div className="flex rounded-2xl bg-inventory-100 p-1 mb-6">
-                {(["signin", "signup"] as Mode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      setMode(m);
-                      setError(null);
-                    }}
-                    className={`flex-1 py-2 rounded-xl text-sm font-display font-semibold transition-all ${
-                      mode === m
-                        ? "bg-white shadow-sm text-inventory-900"
-                        : "text-inventory-500 hover:text-inventory-700"
-                    }`}
-                  >
-                    {m === "signin" ? "Sign In" : "Sign Up"}
-                  </button>
-                ))}
-              </div>
+      {/* Main Content */}
+      <main className="flex-1 flex items-center justify-center px-4 sm:px-8 pb-6">
+        <div className="w-full max-w-md">
+          {/* Card */}
+          <div className="bg-white rounded-3xl shadow-[0_20px_40px_rgba(174,50,0,0.06)] p-6 sm:p-10 relative overflow-hidden">
+            {/* Decorative blur orb */}
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-[#ae3200]/10 rounded-full blur-3xl pointer-events-none" />
 
-              {/* Social login buttons */}
-              <div className="space-y-3 mb-5">
+            {magicSent ? (
+              /* Magic Link Sent State */
+              <div className="text-center py-6 relative">
+                <div className="w-16 h-16 rounded-full bg-[#526442]/10 flex items-center justify-center mx-auto mb-5">
+                  <span className="text-3xl">✉️</span>
+                </div>
+                <h2 className="font-['Plus_Jakarta_Sans'] font-extrabold text-2xl text-[#1c1b1a] mb-2">
+                  Check your email
+                </h2>
+                <p className="text-[#5b4038] text-base font-['Be_Vietnam_Pro'] leading-relaxed">
+                  We sent a magic link to <strong className="text-[#1c1b1a]">{email}</strong>.
+                  Click it to sign in.
+                </p>
+                <button
+                  onClick={() => {
+                    setMagicSent(false);
+                    setMode("signin");
+                  }}
+                  className="mt-8 text-sm text-[#ae3200] font-['Plus_Jakarta_Sans'] font-bold hover:underline"
+                >
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                {/* Headline */}
+                <div className="text-center mb-8">
+                  <h1 className="font-['Plus_Jakarta_Sans'] text-3xl sm:text-[2.1rem] font-extrabold leading-tight tracking-[-0.033em] text-[#1c1b1a] mb-2">
+                    {mode === "signup"
+                      ? "Join your neighborhood."
+                      : mode === "magic"
+                        ? "Sign in without a password."
+                        : "Welcome back to your neighborhood."}
+                  </h1>
+                  <p className="text-[#5b4038] text-base font-['Be_Vietnam_Pro']">
+                    {mode === "signup"
+                      ? "Create your account to start sharing."
+                      : mode === "magic"
+                        ? "We'll send you a link to sign in."
+                        : "Sign in to continue sharing."}
+                  </p>
+                </div>
+
+                {/* Tabs — underline style matching Stitch */}
+                <div className="flex mb-8 relative border-b border-[#ebe7e4]">
+                  {(["signin", "signup"] as Mode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setMode(m);
+                        setError(null);
+                      }}
+                      className={`flex-1 pb-4 text-center font-['Plus_Jakarta_Sans'] text-base transition-colors ${
+                        mode === m || (mode === "magic" && m === "signin")
+                          ? "font-bold text-[#ae3200] border-b-2 border-[#ae3200]"
+                          : "font-medium text-[#5b4038] hover:text-[#1c1b1a]"
+                      }`}
+                    >
+                      {m === "signin" ? "Sign In" : "Create Account"}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Google Auth */}
                 <button
                   onClick={() => handleSocialLogin("google")}
                   disabled={!!socialLoading}
-                  className="w-full py-3 rounded-2xl border-2 border-inventory-200 text-inventory-700 font-display font-semibold text-sm hover:border-inventory-300 hover:bg-inventory-50 transition-colors flex items-center justify-center gap-3 disabled:opacity-50"
+                  className="w-full flex items-center justify-center h-14 rounded-full bg-[#ebe7e4] text-[#1c1b1a] hover:bg-[#ddd9d6] transition-colors mb-6 font-['Plus_Jakarta_Sans'] font-bold text-base gap-3 disabled:opacity-50"
                 >
                   {socialLoading === "google" ? (
-                    <div className="w-4 h-4 border-2 border-inventory-300 border-t-inventory-600 rounded-full animate-spin" />
+                    <div className="w-5 h-5 border-2 border-[#8f7067] border-t-[#1c1b1a] rounded-full animate-spin" />
                   ) : (
                     <svg className="w-5 h-5" viewBox="0 0 24 24">
                       <path
@@ -195,119 +221,135 @@ export default function AuthPage() {
                   )}
                   Continue with Google
                 </button>
-              </div>
 
-              {/* Divider */}
-              <div className="flex items-center gap-3 mb-5">
-                <div className="flex-1 h-px bg-inventory-200" />
-                <span className="text-xs text-inventory-400">
-                  or continue with email
-                </span>
-                <div className="flex-1 h-px bg-inventory-200" />
-              </div>
-
-              <div className="space-y-4">
-                {/* Email */}
-                <div>
-                  <label className="block text-xs font-bold text-inventory-500 mb-1.5">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="you@example.com"
-                    className="w-full px-4 py-3 rounded-2xl border-2 border-inventory-200 focus:border-accent outline-none text-sm transition-colors"
-                    autoComplete="email"
-                  />
+                {/* Divider */}
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="flex-1 h-px bg-[#ebe7e4]" />
+                  <span className="text-sm font-medium text-[#5b4038] uppercase tracking-wider font-['Be_Vietnam_Pro']">
+                    OR
+                  </span>
+                  <div className="flex-1 h-px bg-[#ebe7e4]" />
                 </div>
 
-                {/* Password — only for signin/signup */}
-                {mode !== "magic" && (
+                <div className="space-y-5">
+                  {/* Email */}
                   <div>
-                    <label className="block text-xs font-bold text-inventory-500 mb-1.5">
-                      Password
+                    <label className="block text-sm font-medium text-[#5b4038] mb-2 font-['Plus_Jakarta_Sans']">
+                      Email address
                     </label>
                     <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      placeholder={
-                        mode === "signup"
-                          ? "Create a password (min 6 chars)"
-                          : "Your password"
-                      }
-                      className="w-full px-4 py-3 rounded-2xl border-2 border-inventory-200 focus:border-accent outline-none text-sm transition-colors"
-                      autoComplete={
-                        mode === "signup" ? "new-password" : "current-password"
-                      }
+                      placeholder="neighbor@example.com"
+                      className="w-full h-14 bg-[#f7f3ef] border-none rounded-2xl px-4 text-[#1c1b1a] placeholder:text-[#8f7067] focus:ring-2 focus:ring-[#ae3200] focus:outline-none transition-shadow text-base font-['Be_Vietnam_Pro']"
+                      autoComplete="email"
                     />
                   </div>
-                )}
 
-                {/* Error */}
-                {error && (
-                  <div className="flex items-start gap-2 px-4 py-3 rounded-2xl bg-red-50 border border-red-100">
-                    <span className="text-red-500 text-xs mt-0.5">⚠</span>
-                    <p className="text-red-600 text-xs leading-relaxed">
-                      {error}
-                    </p>
-                  </div>
-                )}
-
-                {/* Submit */}
-                <button
-                  onClick={handleSubmit}
-                  disabled={
-                    loading || !email || (mode !== "magic" && !password)
-                  }
-                  className="w-full py-3.5 bg-accent text-white rounded-2xl font-display font-bold text-sm hover:bg-accent-dark transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Loading...
-                    </>
-                  ) : mode === "signin" ? (
-                    "Sign In"
-                  ) : mode === "signup" ? (
-                    "Create Account"
-                  ) : (
-                    "Send Magic Link"
+                  {/* Password — only for signin/signup */}
+                  {mode !== "magic" && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-[#5b4038] font-['Plus_Jakarta_Sans']">
+                          Password
+                        </label>
+                        {mode === "signin" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMode("magic");
+                              setError(null);
+                            }}
+                            className="text-sm font-medium text-[#ae3200] hover:underline font-['Be_Vietnam_Pro']"
+                          >
+                            Forgot password?
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={
+                          mode === "signup"
+                            ? "Create a password (min 6 chars)"
+                            : "••••••••"
+                        }
+                        className="w-full h-14 bg-[#f7f3ef] border-none rounded-2xl px-4 text-[#1c1b1a] placeholder:text-[#8f7067] focus:ring-2 focus:ring-[#ae3200] focus:outline-none transition-shadow text-base font-['Be_Vietnam_Pro']"
+                        autoComplete={
+                          mode === "signup" ? "new-password" : "current-password"
+                        }
+                      />
+                    </div>
                   )}
-                </button>
 
-                {/* Magic link toggle */}
-                <button
-                  onClick={() => {
-                    setMode(mode === "magic" ? "signin" : "magic");
-                    setError(null);
-                  }}
-                  className="w-full py-2.5 text-inventory-500 font-display font-semibold text-xs hover:text-accent transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <span>✨</span>
-                  {mode === "magic"
-                    ? "Use password instead"
-                    : "Sign in with magic link"}
-                </button>
+                  {/* Error */}
+                  {error && (
+                    <div className="flex items-start gap-2.5 px-4 py-3.5 rounded-2xl bg-red-50 border border-red-100">
+                      <span className="text-red-500 text-sm mt-0.5">⚠</span>
+                      <p className="text-red-700 text-sm leading-relaxed font-['Be_Vietnam_Pro']">
+                        {error}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Submit */}
+                  <button
+                    onClick={handleSubmit}
+                    disabled={
+                      loading || !email || (mode !== "magic" && !password)
+                    }
+                    className="w-full h-14 mt-2 rounded-full bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white font-['Plus_Jakarta_Sans'] font-bold text-lg hover:brightness-110 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    {loading ? (
+                      <>
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Loading...</span>
+                      </>
+                    ) : mode === "signin" ? (
+                      "Sign In"
+                    ) : mode === "signup" ? (
+                      "Create Account"
+                    ) : (
+                      "Send Magic Link"
+                    )}
+                  </button>
+
+                  {/* Magic link toggle */}
+                  <button
+                    onClick={() => {
+                      setMode(mode === "magic" ? "signin" : "magic");
+                      setError(null);
+                    }}
+                    className="w-full py-2.5 text-[#526442] font-['Be_Vietnam_Pro'] font-medium text-sm hover:text-[#3b4c2c] transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>✨</span>
+                    {mode === "magic"
+                      ? "Use password instead"
+                      : "Send me a magic link instead"}
+                  </button>
+                </div>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
-        <p className="text-center text-xs text-inventory-400 mt-6">
-          By continuing you agree to our{" "}
-          <span className="text-accent cursor-pointer hover:underline">
-            Terms
-          </span>
-          {" & "}
-          <span className="text-accent cursor-pointer hover:underline">
-            Privacy Policy
-          </span>
-        </p>
-      </div>
-    </main>
+          {/* Footer */}
+          <p className="text-center text-sm text-[#5b4038] mt-6 font-['Be_Vietnam_Pro']">
+            By signing in, you agree to our{" "}
+            <Link href="/policies" className="text-[#ae3200] hover:underline">
+              Terms of Service
+            </Link>
+            {" and "}
+            <Link href="/policies" className="text-[#ae3200] hover:underline">
+              Privacy Policy
+            </Link>
+            .
+          </p>
+        </div>
+      </main>
+    </div>
   );
 }
