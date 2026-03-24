@@ -70,6 +70,20 @@ export default function UserMenu() {
             </svg>
             Inbox
           </Link>
+          <Link href="/disputes" onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-4 py-3 text-sm text-inventory-700 hover:bg-inventory-50 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l3 9a5.002 5.002 0 01-6.001 0M18 7l-3 9m-5.938-1H13" />
+            </svg>
+            Disputes
+          </Link>
+          <Link href="/support" onClick={() => setOpen(false)}
+            className="flex items-center gap-2 px-4 py-3 text-sm text-inventory-700 hover:bg-inventory-50 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Support
+          </Link>
           <div className="h-px bg-inventory-100" />
           <button onClick={signOut}
             className="w-full flex items-center gap-2 px-4 py-3 text-sm text-red-500 hover:bg-red-50 transition-colors">
