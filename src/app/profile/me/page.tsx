@@ -653,7 +653,7 @@ export default function MyProfilePage() {
             <div className="bg-white rounded-xl p-3 text-center">
               <p className="text-[10px] text-inventory-400 uppercase tracking-wider mb-1">Revenue</p>
               <p className="font-display font-black text-lg text-accent">$0.00</p>
-              <p className="text-[10px] text-inventory-300">Payouts coming soon</p>
+              {/* <p className="text-[10px] text-inventory-300"><Link href="/payouts" className="text-[10px] text-accent hover:underline">Manage payouts</Link></p> */}
             </div>
             <div className="bg-white rounded-xl p-3 text-center">
               <p className="text-[10px] text-inventory-400 uppercase tracking-wider mb-1">Active Lends</p>
@@ -664,12 +664,12 @@ export default function MyProfilePage() {
           <div className="mt-4 p-3 rounded-xl bg-white border border-inventory-100 flex items-center gap-3">
             <span className="text-xl">💳</span>
             <div className="flex-1">
-              <p className="text-xs font-bold text-inventory-700">Connect your bank</p>
+              <p className="text-xs font-bold text-inventory-700">Manage payouts</p>
               <p className="text-[10px] text-inventory-400">Set up payouts for rental & sale earnings</p>
             </div>
-            <button className="px-3 py-1.5 bg-accent text-white text-[10px] font-bold rounded-lg opacity-50 cursor-not-allowed">
-              Soon
-            </button>
+            <Link href="/payouts" className="px-3 py-1.5 bg-accent text-white text-[10px] font-bold rounded-lg hover:bg-accent-dark transition-colors">
+              Set Up
+            </Link>
           </div>
         </div>
     
