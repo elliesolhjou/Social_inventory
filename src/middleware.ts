@@ -35,6 +35,20 @@ export async function middleware(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Signed in but no building → redirect to onboarding
+  if (user && !pathname.startsWith("/onboarding")) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("building_id")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.building_id) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/onboarding";
+      return NextResponse.redirect(url);
+    }
+  }
   // Not signed in → redirect to auth
   if (!user) {
     const url = req.nextUrl.clone();
