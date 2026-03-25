@@ -139,6 +139,7 @@ export default function ItemReviewForm({ data, onSubmit, onBack, isSubmitting, f
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSubmit(form); };
   const showRentToOwn = form.rent_available && form.sell_available;
+  const [selectedFrame, setSelectedFrame] = useState(0);
 
   return (
     <div className="space-y-8 animate-slide-up">
@@ -148,18 +149,27 @@ export default function ItemReviewForm({ data, onSubmit, onBack, isSubmitting, f
         {/* Left: Photo + Proxie Strategy */}
         <div className="md:col-span-5 space-y-5">
           {frames.length > 0 && (
-            <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-[#1c1b1a]">
-              <img src={frames[0]} alt="Item preview" className="w-full h-full object-cover" />
+            <div className="space-y-3">
+              {/* Main photo */}
+              <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-[#1c1b1a]">
+                <img src={frames[selectedFrame] ?? frames[0]} alt="Item preview" className="w-full h-full object-cover transition-opacity duration-200" />
+              </div>
+              {/* Clickable thumbnails */}
               {frames.length > 1 && (
-                <div className="absolute bottom-3 left-3 right-3 flex gap-1.5">
-                  {frames.slice(0, 5).map((f, i) => (
-                    <div key={i} className="w-12 h-12 rounded-lg overflow-hidden border-2 border-white/50 flex-shrink-0">
-                      <img src={f} alt={`Frame ${i + 1}`} className="w-full h-full object-cover" />
-                    </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {frames.map((f, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedFrame(i)}
+                      className={`w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 transition-all ${
+                        i === selectedFrame
+                          ? "ring-2 ring-[#ae3200] ring-offset-2 opacity-100"
+                          : "opacity-60 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={f} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
                   ))}
-                  {frames.length > 5 && (
-                    <div className="w-12 h-12 rounded-lg bg-black/50 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">+{frames.length - 5}</div>
-                  )}
                 </div>
               )}
             </div>
@@ -271,7 +281,14 @@ export default function ItemReviewForm({ data, onSubmit, onBack, isSubmitting, f
                 </div>
                 <div><p className="font-['Plus_Jakarta_Sans'] font-bold">Buy</p><p className="text-xs text-[#8f7067]">Sell to a neighbor</p></div>
               </div>
-              <Toggle checked={form.sell_available} onChange={() => toggleMode("sell_available")} />
+              <div className="flex items-center gap-2">
+                {form.sell_available && (
+                  <MoneyInput value={form.sell_price_cents ? Math.round(form.sell_price_cents / 100) : 0}
+                    onChange={(v) => update("sell_price_cents", Math.round(v * 100))}
+                    placeholder={suggested.sellPrice ? `~${(suggested.sellPrice / 100).toFixed(0)}` : ""} />
+                )}
+                <Toggle checked={form.sell_available} onChange={() => toggleMode("sell_available")} />
+              </div>
             </div>
           </div>
 
