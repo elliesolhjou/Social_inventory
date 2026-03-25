@@ -56,6 +56,25 @@ const SYSTEM_MESSAGE_TYPES = [
   "logistics_partial",
 ];
 
+/* ── SVG Icons ── */
+const ChevronLeft = () => (
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ChatBubbleIcon = () => (
+  <svg className="w-10 h-10 text-[#8f7067]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+  </svg>
+);
+
 export default function InboxPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -76,7 +95,7 @@ export default function InboxPage() {
   const activeConvRef = useRef<Conversation | null>(null);
   const supabase = createClient();
   const { triggerParse } = useLogisticsParser(() => {
-    // Refresh conversation when Miles sends a suggestion
+    // Refresh conversation when Proxie sends a suggestion
     setTimeout(() => window.location.reload(), 500);
   });
 
@@ -410,23 +429,18 @@ export default function InboxPage() {
       100,
     );
 
-    // Trigger Miles to parse for logistics agreement
+    // Trigger Proxie to parse for logistics agreement
     // if (msg) {
-    //   console.log("MILES DEBUG: transactionStates =", JSON.stringify(transactionStates));
-      
-    //   // Find transaction ID from conversation messages (more reliable than state lookup)
     //   const txIdFromMessages = activeConv?.messages
     //     .filter((m) => m.payload?.transaction_id)
     //     .map((m) => m.payload!.transaction_id as string)
     //     .pop();
-      
-    //   const activeTxId = txIdFromMessages 
+    //
+    //   const activeTxId = txIdFromMessages
     //     ?? Object.entries(transactionStates).find(
     //       ([, tx]) => ["approved", "deposit_held"].includes(tx.state)
     //     )?.[0];
-      
-    //   console.log("MILES DEBUG: activeTxId =", activeTxId);
-      
+    //
     //   if (activeTxId) {
     //     triggerParse(activeTxId);
     //   }
@@ -470,7 +484,6 @@ export default function InboxPage() {
     if (msg.message_type === "request_cancelled") return "Request cancelled";
     if (msg.message_type === "request_expired") return "Request expired";
     if (msg.message_type === "pickup_proposal") return "Pickup proposal sent";
-    // if (msg.message_type === "pickup_suggestion") return "Miles suggested pickup details";
     if (msg.message_type === "logistics_confirmed") return "Pickup details locked in";
     if (msg.message_type === "logistics_partial") return "Pickup details — waiting for confirm";
     if (msg.message_type === "return_submitted") return "Return submitted";
@@ -498,21 +511,21 @@ export default function InboxPage() {
             <div
               className={`max-w-xs sm:max-w-sm rounded-2xl text-sm ${
                 isMine
-                  ? "bg-accent text-white rounded-br-md"
-                  : "bg-inventory-100 text-inventory-900 rounded-bl-md"
+                  ? "bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white rounded-br-md"
+                  : "bg-[#f7f3ef] text-[#1c1b1a] rounded-bl-md"
               }`}
             >
               <div className="px-4 pt-2.5 pb-1">
                 <span
-                  className={`inline-block text-[10px] font-semibold uppercase tracking-wide mb-1 ${isMine ? "text-white/70" : "text-accent"}`}
+                  className={`inline-block text-[10px] font-['Plus_Jakarta_Sans'] font-bold uppercase tracking-wide mb-1 ${isMine ? "text-white/70" : "text-[#ae3200]"}`}
                 >
                   Borrow request
                 </span>
               </div>
               <div className="px-4 pb-2.5">
-                <p className="leading-relaxed">{msg.content}</p>
+                <p className="leading-relaxed font-['Be_Vietnam_Pro']">{msg.content}</p>
                 <p
-                  className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}
+                  className={`text-xs mt-1 font-['Be_Vietnam_Pro'] ${isMine ? "text-white/60" : "text-[#8f7067]"}`}
                 >
                   {formatTime(msg.created_at)}
                 </p>
@@ -541,7 +554,7 @@ export default function InboxPage() {
               isOwner={myId === txState?.owner_id}
             />
             <p
-              className={`text-[10px] mt-1 ${isMine ? "text-right" : ""} text-inventory-400`}
+              className={`text-[10px] mt-1 font-['Be_Vietnam_Pro'] ${isMine ? "text-right" : ""} text-[#8f7067]`}
             >
               {formatTime(msg.created_at)}
             </p>
@@ -554,7 +567,7 @@ export default function InboxPage() {
     if (msg.message_type === "request_accepted") {
       return (
         <div key={msg.id} className="flex flex-col items-center gap-1">
-          <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs border border-green-200">
+          <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-['Plus_Jakarta_Sans'] font-bold border border-green-200">
             Request accepted
           </span>
           <DepositConfirmCard
@@ -567,7 +580,7 @@ export default function InboxPage() {
             currentState={txState?.state ?? "approved"}
             isBorrower={myId !== txState?.owner_id}
           />
-          <p className="text-[10px] text-inventory-400">
+          <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">
             {formatTime(msg.created_at)}
           </p>
         </div>
@@ -580,7 +593,7 @@ export default function InboxPage() {
       const itemName = (payload.item_title as string) ?? "Item";
       return (
         <div key={msg.id} className="flex flex-col items-center gap-2">
-          <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs border border-green-200">
+          <span className="px-3 py-1 rounded-full bg-green-50 text-green-700 text-xs font-['Plus_Jakarta_Sans'] font-bold border border-green-200">
             {msg.content}
           </span>
           <PickupCard
@@ -611,16 +624,16 @@ export default function InboxPage() {
           <div
             className={`max-w-xs sm:max-w-sm rounded-2xl text-sm ${
               isMine
-                ? "bg-accent text-white rounded-br-md"
-                : "bg-inventory-100 text-inventory-900 rounded-bl-md"
+                ? "bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white rounded-br-md"
+                : "bg-[#f7f3ef] text-[#1c1b1a] rounded-bl-md"
             }`}
           >
             <div className="px-4 py-2.5">
-              <p className="leading-relaxed whitespace-pre-line">
+              <p className="leading-relaxed font-['Be_Vietnam_Pro'] whitespace-pre-line">
                 {msg.content}
               </p>
               <p
-                className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}
+                className={`text-xs mt-1 font-['Be_Vietnam_Pro'] ${isMine ? "text-white/60" : "text-[#8f7067]"}`}
               >
                 {formatTime(msg.created_at)}
               </p>
@@ -648,7 +661,7 @@ export default function InboxPage() {
       );
     }
 
-    // ─── Miles pickup suggestion → both parties see confirm card ───
+    // ─── Proxie pickup suggestion → both parties see confirm card ───
     if (msg.message_type === "pickup_suggestion") {
       return (
         <div key={msg.id} className="flex flex-col items-center gap-1">
@@ -666,7 +679,7 @@ export default function InboxPage() {
             confidence={(payload.confidence as number) ?? 0.7}
             transactionState={txState?.state ?? "deposit_held"}
           />
-          <p className="text-[10px] text-inventory-400">
+          <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">
             {formatTime(msg.created_at)}
           </p>
         </div>
@@ -677,7 +690,7 @@ export default function InboxPage() {
     if (msg.message_type === "return_submitted") {
       return (
         <div key={msg.id} className="flex flex-col items-center gap-1">
-          <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs border border-blue-200">
+          <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-['Plus_Jakarta_Sans'] font-bold border border-blue-200">
             {msg.content}
           </span>
           <ReturnConfirmCard
@@ -690,7 +703,7 @@ export default function InboxPage() {
             currentState={txState?.state ?? "return_submitted"}
             isOwner={myId === txState?.owner_id}
           />
-          <p className="text-[10px] text-inventory-400">
+          <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">
             {formatTime(msg.created_at)}
           </p>
         </div>
@@ -703,8 +716,7 @@ export default function InboxPage() {
       const variantMap: Record<string, string> = {
         request_declined: "bg-red-50 text-red-700 border-red-200",
         request_pending: "bg-amber-50 text-amber-700 border-amber-200",
-        request_expired:
-          "bg-inventory-100 text-inventory-500 border-inventory-200",
+        request_expired: "bg-[#f7f3ef] text-[#8f7067] border-[#e6e2de]",
         deposit_confirmed: "bg-green-50 text-green-700 border-green-200",
         deposit_nudge: "bg-amber-50 text-amber-700 border-amber-200",
         deposit_warning: "bg-red-50 text-red-700 border-red-200",
@@ -715,13 +727,12 @@ export default function InboxPage() {
         logistics_partial: "bg-amber-50 text-amber-700 border-amber-200",
         return_initiated: "bg-blue-50 text-blue-700 border-blue-200",
         transaction_complete: "bg-green-50 text-green-700 border-green-200",
-        request_cancelled:
-          "bg-inventory-100 text-inventory-500 border-inventory-200",
+        request_cancelled: "bg-[#f7f3ef] text-[#8f7067] border-[#e6e2de]",
       };
       return (
         <div key={msg.id} className="flex justify-center">
           <div
-            className={`px-3 py-1.5 rounded-lg text-xs text-center border max-w-[90%] ${variantMap[msg.message_type] ?? "bg-inventory-100 text-inventory-500 border-inventory-200"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-['Be_Vietnam_Pro'] text-center border max-w-[90%] ${variantMap[msg.message_type] ?? "bg-[#f7f3ef] text-[#8f7067] border-[#e6e2de]"}`}
           >
             {msg.content}
           </div>
@@ -736,15 +747,15 @@ export default function InboxPage() {
         className={`flex ${isMine ? "justify-end" : "justify-start"}`}
       >
         <div
-          className={`max-w-xs sm:max-w-sm px-4 py-2.5 rounded-2xl text-sm ${
+          className={`max-w-xs sm:max-w-sm px-4 py-2.5 rounded-2xl text-sm font-['Be_Vietnam_Pro'] ${
             isMine
-              ? "bg-accent text-white rounded-br-md"
-              : "bg-inventory-100 text-inventory-900 rounded-bl-md"
+              ? "bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white rounded-br-md"
+              : "bg-[#f7f3ef] text-[#1c1b1a] rounded-bl-md"
           }`}
         >
           <p className="leading-relaxed">{msg.content}</p>
           <p
-            className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-inventory-400"}`}
+            className={`text-xs mt-1 ${isMine ? "text-white/60" : "text-[#8f7067]"}`}
           >
             {formatTime(msg.created_at)}
           </p>
@@ -755,43 +766,31 @@ export default function InboxPage() {
 
   if (loading)
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-accent/20 border-t-accent rounded-full animate-spin" />
+      <main className="min-h-screen bg-[#fdf9f5] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#e6e2de] border-t-[#ae3200] rounded-full animate-spin" />
       </main>
     );
 
   return (
-    <main className="min-h-screen flex flex-col">
+    <main className="min-h-screen bg-[#fdf9f5] flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-40 glass border-b border-inventory-200/50">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-[#f7f3ef]/90 backdrop-blur-md border-b border-[#e6e2de]/30">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center gap-3">
           <Link
             href="/dashboard"
-            className="text-inventory-500 hover:text-inventory-900 transition-colors"
+            className="text-[#8f7067] hover:text-[#1c1b1a] transition-colors"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
+            <ChevronLeft />
           </Link>
-          <h1 className="font-display font-bold text-base flex-1 flex items-center gap-2">
+          <h1 className="font-['Plus_Jakarta_Sans'] font-bold text-lg text-[#1c1b1a] flex-1 flex items-center gap-2">
             Inbox
             <span
-              className="w-2 h-2 rounded-full bg-trust-high animate-pulse"
+              className="w-2 h-2 rounded-full bg-[#526442] animate-pulse"
               title="Live"
             />
           </h1>
           {conversations.reduce((n, c) => n + c.unreadCount, 0) > 0 && (
-            <span className="px-2.5 py-1 rounded-full bg-accent text-white text-xs font-bold">
+            <span className="px-2.5 py-1 rounded-full bg-[#ae3200] text-white text-xs font-['Plus_Jakarta_Sans'] font-bold">
               {conversations.reduce((n, c) => n + c.unreadCount, 0)} new
             </span>
           )}
@@ -800,60 +799,63 @@ export default function InboxPage() {
 
       {conversations.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
-          <span className="text-5xl mb-4">💬</span>
-          <p className="font-display font-bold text-inventory-700 mb-2">
+          <div className="w-20 h-20 rounded-full bg-[#f7f3ef] flex items-center justify-center mx-auto mb-4">
+            <ChatBubbleIcon />
+          </div>
+          <p className="font-['Plus_Jakarta_Sans'] font-bold text-[#1c1b1a] text-lg mb-2">
             No messages yet
           </p>
-          <p className="text-sm text-inventory-400 mb-6">
+          <p className="text-sm text-[#8f7067] font-['Be_Vietnam_Pro'] mb-6">
             When you message a neighbor or someone messages you, it&apos;ll
             appear here.
           </p>
           <Link
             href="/dashboard"
-            className="px-5 py-2.5 bg-accent text-white rounded-xl font-display font-semibold text-sm"
+            className="px-6 py-2.5 bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white rounded-full font-['Plus_Jakarta_Sans'] font-bold text-sm"
           >
-            Browse Items →
+            Browse Items
           </Link>
         </div>
       ) : (
         <div className="flex-1 flex max-w-5xl mx-auto w-full">
           {/* Conversation list */}
           <aside
-            className={`w-full sm:w-72 border-r border-inventory-100 flex-shrink-0 ${activeConv ? "hidden sm:block" : "block"}`}
+            className={`w-full sm:w-80 border-r border-[#e6e2de]/50 flex-shrink-0 ${activeConv ? "hidden sm:block" : "block"}`}
           >
             {conversations.map((conv) => (
               <button
                 key={conv.partner.id}
                 onClick={() => openConversation(conv)}
-                className={`w-full flex items-center gap-3 px-4 py-4 border-b border-inventory-50 hover:bg-inventory-50 transition-colors text-left ${activeConv?.partner.id === conv.partner.id ? "bg-accent/5 border-l-2 border-l-accent" : ""}`}
+                className={`w-full flex items-center gap-3 px-4 py-4 border-b border-[#e6e2de]/30 hover:bg-[#f7f3ef] transition-colors text-left ${activeConv?.partner.id === conv.partner.id ? "bg-[#ae3200]/5 border-l-2 border-l-[#ae3200]" : ""}`}
               >
-                <div className="w-11 h-11 rounded-full bg-accent/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <div className="w-11 h-11 rounded-full bg-[#ae3200]/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
                   {conv.partner.avatar_url ? (
                     <img
                       src={conv.partner.avatar_url}
+                      alt={conv.partner.display_name}
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="font-bold text-accent">
+                    <span className="font-bold text-[#ae3200]">
                       {conv.partner.display_name?.[0] ?? "?"}
                     </span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-0.5">
-                    <p className="font-display font-bold text-sm truncate">
+                    <p className="font-['Plus_Jakarta_Sans'] font-bold text-sm text-[#1c1b1a] truncate">
                       {conv.partner.display_name}
                     </p>
-                    <span className="text-xs text-inventory-400 flex-shrink-0 ml-2">
+                    <span className="text-xs text-[#8f7067] font-['Be_Vietnam_Pro'] flex-shrink-0 ml-2">
                       {formatTime(conv.lastMessage.created_at)}
                     </span>
                   </div>
-                  <p className="text-xs text-inventory-400 truncate">
+                  <p className="text-xs text-[#8f7067] font-['Be_Vietnam_Pro'] truncate">
                     {previewText(conv.lastMessage)}
                   </p>
                 </div>
                 {conv.unreadCount > 0 && (
-                  <span className="w-5 h-5 rounded-full bg-accent text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
+                  <span className="w-5 h-5 rounded-full bg-[#ae3200] text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
                     {conv.unreadCount}
                   </span>
                 )}
@@ -865,46 +867,35 @@ export default function InboxPage() {
           {activeConv ? (
             <div className="flex-1 flex flex-col min-h-0">
               {/* Thread header */}
-              <div className="flex items-center gap-3 px-4 py-3 border-b border-inventory-100 bg-white">
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-[#e6e2de]/30 bg-white">
                 <button
                   onClick={() => setActiveConv(null)}
-                  className="sm:hidden text-inventory-500"
+                  className="sm:hidden text-[#8f7067]"
                 >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
+                  <ChevronLeft />
                 </button>
                 <Link
                   href={`/profile/${activeConv.partner.id}`}
                   className="flex items-center gap-3 flex-1 hover:opacity-80 transition-opacity"
                 >
-                  <div className="w-9 h-9 rounded-full bg-accent/10 flex items-center justify-center overflow-hidden">
+                  <div className="w-9 h-9 rounded-full bg-[#ae3200]/10 flex items-center justify-center overflow-hidden">
                     {activeConv.partner.avatar_url ? (
                       <img
                         src={activeConv.partner.avatar_url}
+                        alt={activeConv.partner.display_name}
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <span className="font-bold text-accent text-sm">
+                      <span className="font-bold text-[#ae3200] text-sm">
                         {activeConv.partner.display_name?.[0]}
                       </span>
                     )}
                   </div>
                   <div>
-                    <p className="font-display font-bold text-sm">
+                    <p className="font-['Plus_Jakarta_Sans'] font-bold text-sm text-[#1c1b1a]">
                       {activeConv.partner.display_name}
                     </p>
-                    <p className="text-xs text-inventory-400">
+                    <p className="text-xs text-[#8f7067] font-['Be_Vietnam_Pro']">
                       Unit {activeConv.partner.unit_number}
                     </p>
                   </div>
@@ -921,7 +912,7 @@ export default function InboxPage() {
               </div>
 
               {/* Input */}
-              <div className="px-4 py-3 border-t border-inventory-100 bg-white flex gap-2 items-end">
+              <div className="px-4 py-3 border-t border-[#e6e2de]/30 bg-white flex gap-2 items-end">
                 <textarea
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
@@ -933,29 +924,17 @@ export default function InboxPage() {
                   }}
                   placeholder={`Message ${activeConv.partner.display_name.split(" ")[0]}...`}
                   rows={1}
-                  className="flex-1 px-4 py-2.5 rounded-2xl border-2 border-inventory-200 focus:border-accent outline-none text-sm resize-none transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-2xl border-2 border-[#e6e2de] focus:border-[#ae3200] outline-none text-sm font-['Be_Vietnam_Pro'] resize-none transition-colors bg-white"
                 />
                 <button
                   onClick={handleSend}
                   disabled={sending || !newMessage.trim()}
-                  className="w-10 h-10 rounded-xl bg-accent text-white flex items-center justify-center flex-shrink-0 hover:bg-accent-dark transition-colors disabled:opacity-50"
+                  className="w-10 h-10 rounded-full bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white flex items-center justify-center flex-shrink-0 hover:shadow-lg hover:shadow-[#ae3200]/20 transition-all disabled:opacity-50"
                 >
                   {sending ? (
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                      />
-                    </svg>
+                    <SendIcon />
                   )}
                 </button>
               </div>
@@ -963,8 +942,10 @@ export default function InboxPage() {
           ) : (
             <div className="flex-1 hidden sm:flex items-center justify-center text-center">
               <div>
-                <span className="text-4xl mb-3 block">💬</span>
-                <p className="font-display font-bold text-inventory-500">
+                <div className="w-16 h-16 rounded-full bg-[#f7f3ef] flex items-center justify-center mx-auto mb-3">
+                  <ChatBubbleIcon />
+                </div>
+                <p className="font-['Plus_Jakarta_Sans'] font-bold text-[#8f7067]">
                   Select a conversation
                 </p>
               </div>
