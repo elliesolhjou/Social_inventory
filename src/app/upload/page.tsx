@@ -14,11 +14,14 @@ type Step = "capture" | "preview" | "analyzing" | "review" | "success";
 export default function MagicUpload() {
   const [step, setStep] = useState<Step>("capture");
   const [frames, setFrames] = useState<string[]>([]);
+  const [userPhotos, setUserPhotos] = useState<string[]>([]); // Only user-taken/uploaded photos, not video frames
+  const [videoFrames, setVideoFrames] = useState<string[]>([]);
   const [itemData, setItemData] = useState<ItemFormData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdItemId, setCreatedItemId] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [buildingName, setBuildingName] = useState("your building");
 
   // Fetch building name on mount
@@ -36,9 +39,16 @@ export default function MagicUpload() {
     })();
   }, []);
 
-  // Step 1 → 2: Frames captured, go to PREVIEW (not analyze)
-  const handleFramesCaptured = useCallback((capturedFrames: string[]) => {
-    setFrames(capturedFrames);
+  // Step 1 → 2: Frames captured, go to PREVIEW
+  const handleFramesCaptured = useCallback((capturedFrames: string[], capturedVideoUrl?: string) => {
+    if (capturedVideoUrl) {
+      setVideoUrl(capturedVideoUrl);
+      setVideoFrames(capturedFrames); // internal only — for AI analysis
+    } else {
+      // These are user photos — visible to user
+      setFrames((prev) => [...prev, ...capturedFrames]);
+      setUserPhotos((prev) => [...prev, ...capturedFrames]);
+    }
     setError(null);
     setStep("preview");
   }, []);
@@ -46,58 +56,68 @@ export default function MagicUpload() {
   // Preview: remove a photo
   const removeFrame = useCallback((index: number) => {
     setFrames((prev) => prev.filter((_, i) => i !== index));
+    setUserPhotos((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   // Preview: add more photos via file input
   const handleAddMorePhotos = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const newFrames: string[] = [];
+    const newVideoFrames: string[] = [];
+    const newUserPhotos: string[] = [];
     for (let fi = 0; fi < files.length; fi++) {
       const file = files[fi];
       if (file.type.startsWith("video/")) {
-        const video = document.createElement("video");
-        video.src = URL.createObjectURL(file);
-        video.muted = true;
+        // Video uploads: extract frames for AI only, create object URL for preview
+        const videoEl = document.createElement("video");
+        videoEl.src = URL.createObjectURL(file);
+        videoEl.muted = true;
         await new Promise<void>((resolve) => {
-          video.onloadedmetadata = () => { video.currentTime = 0; resolve(); };
+          videoEl.onloadedmetadata = () => { videoEl.currentTime = 0; resolve(); };
         });
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d")!;
-        const duration = Math.min(video.duration, 10);
+        const duration = Math.min(videoEl.duration, 10);
         const frameCount = 3;
         const interval = duration / frameCount;
         for (let i = 0; i < frameCount; i++) {
-          video.currentTime = i * interval;
+          videoEl.currentTime = i * interval;
           await new Promise<void>((resolve) => {
-            video.onseeked = () => {
-              canvas.width = video.videoWidth;
-              canvas.height = video.videoHeight;
-              ctx.drawImage(video, 0, 0);
-              newFrames.push(canvas.toDataURL("image/jpeg", 0.85));
+            videoEl.onseeked = () => {
+              canvas.width = videoEl.videoWidth;
+              canvas.height = videoEl.videoHeight;
+              ctx.drawImage(videoEl, 0, 0);
+              newVideoFrames.push(canvas.toDataURL("image/jpeg", 0.85));
               resolve();
             };
           });
         }
-        URL.revokeObjectURL(video.src);
+        // Set as video URL for preview
+        setVideoUrl(videoEl.src);
       } else {
+        // Image uploads: visible to user AND used by AI
         const dataUrl = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
           reader.readAsDataURL(file);
         });
-        newFrames.push(dataUrl);
+        newUserPhotos.push(dataUrl);
       }
     }
     e.target.value = "";
-    if (newFrames.length > 0) {
-      setFrames((prev) => [...prev, ...newFrames]);
+    if (newVideoFrames.length > 0) {
+      setVideoFrames((prev) => [...prev, ...newVideoFrames]);
+    }
+    if (newUserPhotos.length > 0) {
+      setFrames((prev) => [...prev, ...newUserPhotos]);
+      setUserPhotos((prev) => [...prev, ...newUserPhotos]);
     }
   }, []);
 
   // Step 2 → 3: User confirms photos, send to VisionAgent
   const handleAnalyze = useCallback(async () => {
-    if (frames.length === 0) return;
+    const allFrames = [...frames, ...videoFrames]; // combine user photos + video frames for AI
+    if (allFrames.length === 0) return;
     setStep("analyzing");
     setError(null);
     setAnalysisProgress(0);
@@ -113,7 +133,7 @@ export default function MagicUpload() {
       const response = await fetch("/api/vision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ frames }),
+        body: JSON.stringify({ frames: allFrames }),
       });
 
       clearInterval(progressInterval);
@@ -137,7 +157,7 @@ export default function MagicUpload() {
       setError(err.message || "Failed to analyze item. Please try again.");
       setStep("preview");
     }
-  }, [frames]);
+  }, [frames, videoFrames]);
 
   // ── Helper: upload base64 frame to Supabase Storage ─────────────────────
   async function uploadFrameToStorage(
@@ -204,8 +224,10 @@ export default function MagicUpload() {
 
         if (insertError) throw insertError;
 
-        if (newItem?.id && frames.length > 0) {
-          const uploadPromises = frames.slice(0, 5).map((frame, i) => uploadFrameToStorage(supabase, newItem.id, frame, i));
+        // Upload user photos, or first video frame as fallback for thumbnail
+        const imagesToUpload = frames.length > 0 ? frames : videoFrames.slice(0, 1);
+        if (newItem?.id && imagesToUpload.length > 0) {
+          const uploadPromises = imagesToUpload.slice(0, 5).map((frame, i) => uploadFrameToStorage(supabase, newItem.id, frame, i));
           const uploadedUrls = await Promise.all(uploadPromises);
           const urls = uploadedUrls.filter(Boolean) as string[];
           if (urls.length > 0) {
@@ -214,11 +236,12 @@ export default function MagicUpload() {
           }
         }
 
-        if (newItem?.id && frames.length > 0) {
+        const embedFrame = frames[0] || videoFrames[0];
+        if (newItem?.id && embedFrame) {
           fetch(`/api/items/${newItem.id}/embed`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ frame: frames[0] }),
+            body: JSON.stringify({ frame: embedFrame }),
           }).catch((err) => console.error("Embedding generation failed (non-blocking):", err));
         }
 
@@ -236,8 +259,11 @@ export default function MagicUpload() {
 
   const handleRetake = useCallback(() => {
     setFrames([]);
+    setUserPhotos([]);
+    setVideoFrames([]);
     setItemData(null);
     setError(null);
+    setVideoUrl(null);
     setStep("capture");
   }, []);
 
@@ -348,14 +374,18 @@ export default function MagicUpload() {
           <div className="animate-slide-up">
             <div className="mb-6">
               <h2 className="font-['Plus_Jakarta_Sans'] text-2xl font-bold mb-1 text-[#1c1b1a]">
-                Review your photos
+                Review your {videoUrl && userPhotos.length > 0 ? "video & photos" : videoUrl ? "video" : "photos"}
               </h2>
               <p className="text-[#5b4038] text-sm font-['Be_Vietnam_Pro']">
-                Make sure the photos are clear. Remove any you don&apos;t want, or add more.
+                {videoUrl && userPhotos.length > 0
+                  ? "Your video and photos are ready. You can add more or remove any you don't want."
+                  : videoUrl
+                    ? "Your recorded video is ready. You can also add photos."
+                    : "Make sure the photos are clear. Remove any you don't want, or add more."}
               </p>
             </div>
 
-            {frames.length === 0 ? (
+            {userPhotos.length === 0 && !videoUrl ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <div className="w-16 h-16 rounded-full bg-[#ebe7e4] flex items-center justify-center mb-4">
                   <svg className="w-7 h-7 text-[#8f7067]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -371,9 +401,16 @@ export default function MagicUpload() {
               </div>
             ) : (
               <>
-                {/* Photo grid */}
+                {/* Video player if exists */}
+                {videoUrl && (
+                  <div className="mb-4 rounded-2xl overflow-hidden border border-[#e6e2de]/50 shadow-sm">
+                    <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: "450px" }} />
+                  </div>
+                )}
+
+                {/* Photo grid — only user-uploaded photos, not video frames */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-                  {frames.map((frame, i) => (
+                  {userPhotos.map((frame, i) => (
                     <div key={i} className="relative group aspect-square rounded-2xl overflow-hidden border border-[#e6e2de]/50 shadow-sm">
                       <img src={frame} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
                       <button
@@ -390,12 +427,23 @@ export default function MagicUpload() {
                       </span>
                     </div>
                   ))}
-                  {/* Add more tile */}
+                  {/* Camera tile */}
+                  <button
+                    onClick={() => setStep("capture")}
+                    className="aspect-square rounded-2xl border-2 border-dashed border-[#8f7067]/30 flex flex-col items-center justify-center gap-2 hover:border-[#ae3200]/50 hover:bg-[#ae3200]/5 transition-all"
+                  >
+                    <svg className="w-8 h-8 text-[#8f7067]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z" />
+                    </svg>
+                    <span className="text-xs text-[#8f7067] font-['Plus_Jakarta_Sans'] font-bold">Camera</span>
+                  </button>
+                  {/* Upload tile */}
                   <label className="aspect-square rounded-2xl border-2 border-dashed border-[#8f7067]/30 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[#ae3200]/50 hover:bg-[#ae3200]/5 transition-all">
                     <svg className="w-8 h-8 text-[#8f7067]" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                     </svg>
-                    <span className="text-xs text-[#8f7067] font-['Plus_Jakarta_Sans'] font-bold">Upload More</span>
+                    <span className="text-xs text-[#8f7067] font-['Plus_Jakarta_Sans'] font-bold">Upload</span>
                     <input type="file" accept="image/*,video/*" multiple onChange={handleAddMorePhotos} className="hidden" />
                   </label>
                 </div>
@@ -409,7 +457,11 @@ export default function MagicUpload() {
                   </button>
                   <button onClick={handleAnalyze}
                     className="flex-[2] py-3.5 bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white rounded-full font-['Plus_Jakarta_Sans'] font-bold text-sm hover:brightness-110 transition-all flex items-center justify-center gap-2">
-                    Analyze {frames.length} Photo{frames.length !== 1 ? "s" : ""} with Proxie
+                    {videoUrl && userPhotos.length > 0
+                      ? `Analyze Video + ${userPhotos.length} Photo${userPhotos.length !== 1 ? "s" : ""} with Proxie`
+                      : videoUrl
+                        ? "Analyze Video with Proxie"
+                        : `Analyze ${userPhotos.length} Photo${userPhotos.length !== 1 ? "s" : ""} with Proxie`}
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
                     </svg>
@@ -468,9 +520,11 @@ export default function MagicUpload() {
               data={itemData}
               onSubmit={handlePublish}
               onBack={handleRetake}
+              onBackToPreview={() => setStep("preview")}
               isSubmitting={isSubmitting}
-              frames={frames}
+              frames={userPhotos}
               buildingName={buildingName}
+              videoUrl={videoUrl ?? undefined}
             />
           </div>
         )}

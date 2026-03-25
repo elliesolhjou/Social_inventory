@@ -34,9 +34,11 @@ interface ItemReviewFormProps {
   data: ItemFormData;
   onSubmit: (data: ItemFormData) => void;
   onBack: () => void;
+  onBackToPreview?: () => void;
   isSubmitting: boolean;
   frames?: string[];
   buildingName?: string;
+  videoUrl?: string;
 }
 
 const CATEGORIES = [
@@ -98,7 +100,7 @@ function FieldGroup({ label, aiLabel, children }: { label: string; aiLabel?: boo
   );
 }
 
-export default function ItemReviewForm({ data, onSubmit, onBack, isSubmitting, frames = [], buildingName = "your building" }: ItemReviewFormProps) {
+export default function ItemReviewForm({ data, onSubmit, onBack, onBackToPreview, isSubmitting, frames = [], buildingName = "your building", videoUrl }: ItemReviewFormProps) {
   const [form, setForm] = useState<ItemFormData>({
     ...data,
     borrow_available: data.borrow_available ?? true,
@@ -146,15 +148,21 @@ export default function ItemReviewForm({ data, onSubmit, onBack, isSubmitting, f
       {/* TWO-COLUMN: Photos + Form */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
 
-        {/* Left: Photo + Proxie Strategy */}
+        {/* Left: Media + Proxie Strategy */}
         <div className="md:col-span-5 space-y-5">
+          {/* Video player */}
+          {videoUrl && (
+            <div className="rounded-2xl overflow-hidden bg-[#1c1b1a]">
+              <video src={videoUrl} controls playsInline className="w-full" style={{ maxHeight: "350px" }} />
+            </div>
+          )}
+
+          {/* Photo gallery — always show when photos exist */}
           {frames.length > 0 && (
             <div className="space-y-3">
-              {/* Main photo */}
-              <div className="relative rounded-2xl overflow-hidden aspect-[3/4] bg-[#1c1b1a]">
+              <div className="relative rounded-2xl overflow-hidden aspect-[4/3] bg-[#1c1b1a]">
                 <img src={frames[selectedFrame] ?? frames[0]} alt="Item preview" className="w-full h-full object-cover transition-opacity duration-200" />
               </div>
-              {/* Clickable thumbnails */}
               {frames.length > 1 && (
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {frames.map((f, i) => (
@@ -325,18 +333,29 @@ export default function ItemReviewForm({ data, onSubmit, onBack, isSubmitting, f
 
       {/* Publish */}
       <div className="pt-2">
-        <button onClick={handleSubmit} disabled={isSubmitting || !form.title}
-          className={`w-full py-5 rounded-full font-['Plus_Jakarta_Sans'] font-extrabold text-xl transition-all flex items-center justify-center gap-3 ${
-            isSubmitting || !form.title
-              ? "bg-[#ebe7e4] text-[#8f7067] cursor-not-allowed"
-              : "bg-[#ff5a1f] text-white hover:brightness-110 active:scale-[0.98] shadow-[0_20px_40px_rgba(255,90,31,0.25)]"
-          }`}>
-          {isSubmitting ? (
-            <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Publishing...</>
-          ) : (
-            <>Publish Item <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" /></svg></>
+        <div className="flex gap-3">
+          {onBackToPreview && (
+            <button onClick={onBackToPreview}
+              className="flex-1 py-4 border border-[#e6e2de] text-[#5b4038] rounded-full font-['Plus_Jakarta_Sans'] font-bold text-sm hover:border-[#ae3200]/30 transition-colors flex items-center justify-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+              </svg>
+              Back
+            </button>
           )}
-        </button>
+          <button onClick={handleSubmit} disabled={isSubmitting || !form.title}
+            className={`flex-[2] py-5 rounded-full font-['Plus_Jakarta_Sans'] font-extrabold text-xl transition-all flex items-center justify-center gap-3 ${
+              isSubmitting || !form.title
+                ? "bg-[#ebe7e4] text-[#8f7067] cursor-not-allowed"
+                : "bg-[#ff5a1f] text-white hover:brightness-110 active:scale-[0.98] shadow-[0_20px_40px_rgba(255,90,31,0.25)]"
+            }`}>
+            {isSubmitting ? (
+              <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Publishing...</>
+            ) : (
+              <>Publish Item <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" /></svg></>
+            )}
+          </button>
+        </div>
         <p className="text-center text-[#5b4038] text-sm mt-4 font-['Be_Vietnam_Pro']">
           Visible to everyone in <span className="font-bold">{buildingName}</span>
         </p>
