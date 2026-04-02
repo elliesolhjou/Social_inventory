@@ -7,7 +7,6 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Create clients inside function to guarantee env vars are loaded
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -31,16 +30,13 @@ export async function POST(
 
   const { data: transaction, error: txError } = await supabaseAdmin
     .from("transactions")
-    .select("id, item_id, borrower_id, owner_id, state, payment_intent_id")
+    .select("id, item_id, borrower_id, owner_id, state, payment_intent_id, transaction_type, rent_captured_cents, deposit_held")
     .eq("id", transactionId)
     .single();
 
   if (txError || !transaction) {
     return NextResponse.json(
-      {
-        error: "Transaction not found",
-        debug: { txError, transactionId, hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL, hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY },
-      },
+      { error: "Transaction not found" },
       { status: 404 }
     );
   }
@@ -59,14 +55,37 @@ export async function POST(
     );
   }
 
+  const isRental = transaction.transaction_type === "rent";
+  const depositCents = transaction.deposit_held ?? 0;
+
+  // ── Handle Stripe deposit release ──────────────────────────────
   if (transaction.payment_intent_id) {
     try {
-      const pi = await stripe.paymentIntents.retrieve(transaction.payment_intent_id);
-      if (pi.status === "requires_capture") {
-        await stripe.paymentIntents.cancel(transaction.payment_intent_id);
+      if (isRental) {
+        // RENTAL: Payment was charged immediately (automatic capture).
+        // Refund only the deposit portion. Rental fee stays.
+        if (depositCents > 0) {
+          await stripe.refunds.create({
+            payment_intent: transaction.payment_intent_id,
+            amount: depositCents,
+            reason: "requested_by_customer",
+            metadata: {
+              transaction_id: transactionId,
+              refund_type: "deposit_return",
+              rental_fee_kept: String(transaction.rent_captured_cents ?? 0),
+            },
+          });
+        }
+      } else {
+        // BORROW: Payment was held (manual capture). Cancel to release.
+        const pi = await stripe.paymentIntents.retrieve(transaction.payment_intent_id);
+        if (pi.status === "requires_capture") {
+          await stripe.paymentIntents.cancel(transaction.payment_intent_id);
+        }
       }
     } catch (stripeErr: unknown) {
-      const message = stripeErr instanceof Error ? stripeErr.message : "Stripe cancel failed";
+      const message = stripeErr instanceof Error ? stripeErr.message : "Stripe operation failed";
+      console.error("Stripe deposit release failed:", message);
       return NextResponse.json(
         { error: "Failed to release deposit", detail: message },
         { status: 500 }
@@ -76,11 +95,13 @@ export async function POST(
 
   const now = new Date().toISOString();
 
+  // ── Update transaction state ───────────────────────────────────
   const { error: updateError } = await supabaseAdmin
     .from("transactions")
     .update({
       state: "completed",
       completed_at: now,
+      deposit_released_cents: depositCents,
       updated_at: now,
     })
     .eq("id", transactionId);
@@ -92,19 +113,27 @@ export async function POST(
     );
   }
 
+  // ── Update item availability ───────────────────────────────────
   await supabaseAdmin
     .from("items")
     .update({ availability_status: "available", updated_at: now })
     .eq("id", transaction.item_id);
 
+  // ── Log state change ───────────────────────────────────────────
   await supabaseAdmin.from("transaction_state_log").insert({
     transaction_id: transactionId,
     from_state: "return_submitted",
     to_state: "completed",
     changed_by: user.id,
     change_reason: "owner_confirmed_no_damage",
+    metadata: {
+      transaction_type: isRental ? "rent" : "borrow",
+      deposit_refunded_cents: depositCents,
+      rental_fee_kept_cents: isRental ? transaction.rent_captured_cents : 0,
+    },
   });
 
+  // ── Get item and profile info ──────────────────────────────────
   const { data: ownerProfile } = await supabaseAdmin
     .from("profiles")
     .select("display_name")
@@ -120,37 +149,54 @@ export async function POST(
     .single();
 
   const itemTitle = item?.title ?? "the item";
-
-  const depositDollars = item?.deposit_cents
-    ? `$${((item as any)?.deposit_cents / 100).toFixed(2)}`
+  const depositDollars = depositCents > 0
+    ? `$${(depositCents / 100).toFixed(2)}`
     : "Your deposit";
+  const rentalFeeDollars = transaction.rent_captured_cents
+    ? `$${(transaction.rent_captured_cents / 100).toFixed(2)}`
+    : "$0";
+
+  // ── Message to borrower ────────────────────────────────────────
+  const borrowerMessage = isRental
+    ? `${ownerName} confirmed "${itemTitle}" is in good condition. Your ${depositDollars} deposit has been refunded. Rental fee of ${rentalFeeDollars} has been paid to the owner. Transaction complete!`
+    : `${ownerName} confirmed "${itemTitle}" is in good condition. ${depositDollars} deposit has been released. Transaction complete!`;
 
   await supabaseAdmin.from("messages").insert({
     sender_id: user.id,
     recipient_id: transaction.borrower_id,
     message_type: "transaction_completed",
-    content: `${ownerName} confirmed "${itemTitle}" is in good condition. ${depositDollars} deposit has been released. Transaction complete!`,
+    content: borrowerMessage,
     topic: transaction.item_id,
     payload: {
       transaction_id: transactionId,
       item_id: transaction.item_id,
       item_title: itemTitle,
       deposit_released: true,
+      deposit_refunded_cents: depositCents,
+      transaction_type: isRental ? "rent" : "borrow",
+      rental_fee_cents: isRental ? transaction.rent_captured_cents : 0,
       completed_at: now,
     },
   });
+
+  // ── Message to owner ───────────────────────────────────────────
+  const ownerMessage = isRental
+    ? `You confirmed "${itemTitle}" is back in good condition. The borrower's ${depositDollars} deposit has been refunded. Your rental earnings of ${rentalFeeDollars} are available in your Payouts dashboard. Transaction complete!`
+    : `You confirmed "${itemTitle}" is back in good condition. The borrower's ${depositDollars} deposit has been released. Transaction complete!`;
 
   await supabaseAdmin.from("messages").insert({
     sender_id: user.id,
     recipient_id: transaction.owner_id,
     message_type: "transaction_completed",
-    content: `You confirmed "${itemTitle}" is back in good condition. The borrower's ${depositDollars} deposit has been released. Transaction complete!`,
+    content: ownerMessage,
     topic: transaction.item_id,
     payload: {
       transaction_id: transactionId,
       item_id: transaction.item_id,
       item_title: itemTitle,
       deposit_released: true,
+      transaction_type: isRental ? "rent" : "borrow",
+      rental_earnings_cents: isRental ? transaction.rent_captured_cents : 0,
       completed_at: now,
     },
   });
@@ -159,5 +205,8 @@ export async function POST(
     success: true,
     new_state: "completed",
     deposit_released: true,
+    deposit_refunded_cents: depositCents,
+    transaction_type: isRental ? "rent" : "borrow",
+    rental_fee_kept_cents: isRental ? transaction.rent_captured_cents : 0,
   });
 }

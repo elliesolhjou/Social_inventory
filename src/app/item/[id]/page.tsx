@@ -461,8 +461,8 @@ export default function ItemDetailPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">$0</span>
-                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">${(item.deposit_cents / 100).toFixed(0)} deposit</p>
+                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.rent_price_day_cents / 100).toFixed(0)}</span>
+                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">per day + ${(item.deposit_cents / 100).toFixed(0)} deposit</p>
                     </div>
                   </div>
                 )}
@@ -482,7 +482,8 @@ export default function ItemDetailPage() {
                     </div>
                     <div className="text-right">
                       <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.rent_price_day_cents / 100).toFixed(0)}</span>
-                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">per day</p>
+                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">per day+ ${(item.deposit_cents / 100).toFixed(0)} deposit</p>
+                      
                     </div>
                   </div>
                 )}
@@ -500,7 +501,10 @@ export default function ItemDetailPage() {
                         <p className="text-[#8f7067] text-xs font-['Be_Vietnam_Pro']">Full purchase price</p>
                       </div>
                     </div>
-                    <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.sell_price_cents / 100).toFixed(0)}</span>
+                    <div className="text-right">
+                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.sell_price_cents / 100).toFixed(0)}</span>
+                      {/* <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">no deposit needed</p> */}
+                    </div>
                   </div>
                 )}
                 {/* Rent-to-Own */}
@@ -547,11 +551,20 @@ export default function ItemDetailPage() {
                 </button>
               )}
               {isOwner && (
-                <div className="w-full py-5 rounded-full bg-[#ebe7e4] text-[#5b4038] font-['Plus_Jakarta_Sans'] font-bold text-base flex items-center justify-center gap-2">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-                  </svg>
-                  This is your item
+                <div className="flex gap-3 w-full">
+                  <div className="flex-1 py-4 rounded-2xl bg-[#ebe7e4] text-[#5b4038] font-['Plus_Jakarta_Sans'] font-bold text-sm flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                    </svg>
+                    Your item
+                  </div>
+                  <Link href={`/item/${item.id}/edit`}
+                    className="px-6 py-4 rounded-2xl bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white font-['Plus_Jakarta_Sans'] font-bold text-sm flex items-center gap-2 hover:scale-[1.02] active:scale-95 transition-all">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+                    </svg>
+                    Edit
+                  </Link>
                 </div>
               )}
 
@@ -712,13 +725,22 @@ export default function ItemDetailPage() {
       <div className="fixed bottom-0 left-0 right-0 z-40 p-4 bg-[#fdf9f5]/80 backdrop-blur-xl border-t border-[#e6e2de]/50 md:hidden">
         <div className="max-w-3xl mx-auto flex gap-3">
           {isOwner ? (
-            <Link href="/dashboard"
-              className="w-full py-3.5 rounded-full bg-[#ebe7e4] text-[#5b4038] font-['Plus_Jakarta_Sans'] font-bold text-sm flex items-center justify-center gap-2">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-              </svg>
-              Back to Dashboard
-            </Link>
+            <div className="flex gap-3 w-full">
+              <Link href="/dashboard"
+                className="flex-1 py-3.5 rounded-full bg-[#ebe7e4] text-[#5b4038] font-['Plus_Jakarta_Sans'] font-bold text-sm flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                </svg>
+                Dashboard
+              </Link>
+              <Link href={`/item/${item.id}/edit`}
+                className="flex-1 py-3.5 rounded-full bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white font-['Plus_Jakarta_Sans'] font-bold text-sm flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+                </svg>
+                Edit Item
+              </Link>
+            </div>
           ) : (
             <>
               <button onClick={() => setShowMessage(true)}
