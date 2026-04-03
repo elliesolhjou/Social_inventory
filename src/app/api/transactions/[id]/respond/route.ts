@@ -115,7 +115,7 @@ export async function POST(
   const [{ data: item }, { data: ownerProfile }] = await Promise.all([
     supabase
       .from("items")
-      .select("title, deposit_amount_cents")
+      .select("title, deposit_cents")
       .eq("id", transaction.item_id)
       .single(),
     supabase
@@ -127,7 +127,7 @@ export async function POST(
 
   const itemTitle = item?.title ?? "this item";
   const ownerName = ownerProfile?.display_name ?? "The owner";
-  const depositAmountCents = item?.deposit_amount_cents ?? 0;
+  const depositAmountCents = item?.deposit_cents ?? 0;
 
   // 6. Build the update payload
   const now = new Date().toISOString();
