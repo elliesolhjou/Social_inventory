@@ -168,6 +168,26 @@ function StatusBadge({ action }: { action: string }) {
       label: "Pending (24hr)",
       className: "bg-amber-50 text-amber-800 border-amber-300",
     },
+    deposit_held: {
+      label: "Deposit Held",
+      className: "bg-blue-50 text-blue-800 border-blue-300",
+    },
+    picked_up: {
+      label: "Picked Up",
+      className: "bg-green-50 text-green-800 border-green-300",
+    },
+    return_submitted: {
+      label: "Return Submitted",
+      className: "bg-amber-50 text-amber-800 border-amber-300",
+    },
+    completed: {
+      label: "Completed",
+      className: "bg-green-50 text-green-800 border-green-300",
+    },
+    disputed: {
+      label: "Disputed",
+      className: "bg-red-50 text-red-800 border-red-300",
+    },
     expired: {
       label: "Expired",
       className: "bg-gray-50 text-gray-600 border-gray-300",

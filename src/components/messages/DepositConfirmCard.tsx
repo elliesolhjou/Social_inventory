@@ -11,6 +11,9 @@ interface DepositConfirmCardProps {
   depositAmountCents: number;
   currentState: string;
   isBorrower: boolean;
+  transactionType?: string | null;
+  dailyRentCents?: number | null;
+  borrowDays?: number | null;
 }
 
 export default function DepositConfirmCard({
@@ -22,6 +25,9 @@ export default function DepositConfirmCard({
   depositAmountCents,
   currentState,
   isBorrower,
+  transactionType,
+  dailyRentCents,
+  borrowDays,
 }: DepositConfirmCardProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +35,13 @@ export default function DepositConfirmCard({
   const depositDisplay = depositAmountCents
     ? `$${(depositAmountCents / 100).toFixed(2)}`
     : "$0.00";
+
+  const isRent = transactionType === "rent";
+  const rentalFeeCents = isRent && dailyRentCents && borrowDays
+    ? dailyRentCents * borrowDays : 0;
+  const rentalFeeDisplay = rentalFeeCents ? `$${(rentalFeeCents / 100).toFixed(2)}` : null;
+  const totalCents = depositAmountCents + rentalFeeCents;
+  const totalDisplay = `$${(totalCents / 100).toFixed(2)}`;
 
   async function handleConfirm() {
     setLoading(true);
@@ -149,18 +162,38 @@ export default function DepositConfirmCard({
       </div>
 
       {/* Deposit amount */}
-      <div className="flex items-center justify-between py-1.5 border-t border-inventory-100 mb-1.5">
+      <div className="flex items-center justify-between py-1.5 border-t border-inventory-100 mb-1">
         <span className="text-xs text-inventory-400">
           Refundable deposit hold
         </span>
         <span className="text-sm font-medium">{depositDisplay}</span>
       </div>
 
+      {/* Rental fee (rent transactions only) */}
+      {isRent && rentalFeeDisplay && (
+        <>
+          <div className="flex items-center justify-between py-1.5 mb-1">
+            <span className="text-xs text-inventory-400">
+              Rental fee ({borrowDays} day{borrowDays !== 1 ? "s" : ""} × ${((dailyRentCents ?? 0) / 100).toFixed(2)})
+            </span>
+            <span className="text-sm font-medium">{rentalFeeDisplay}</span>
+          </div>
+          <div className="flex items-center justify-between py-1.5 border-t border-inventory-100 mb-1.5">
+            <span className="text-xs font-semibold text-inventory-600">
+              Total charge
+            </span>
+            <span className="text-sm font-bold">{totalDisplay}</span>
+          </div>
+        </>
+      )}
+
+      {!isRent && <div className="mb-0.5" />}
+
       {/* Explanation */}
       <p className="text-[11px] text-inventory-400 mb-3 leading-relaxed">
-        You&apos;ll be redirected to Stripe to authorize the hold. Your card will
-        only be charged if the item is damaged. The hold releases automatically
-        when you return it.
+        {isRent
+          ? `You'll be redirected to Stripe. The rental fee (${rentalFeeDisplay}) will be charged immediately. The deposit (${depositDisplay}) will only be charged if the item is damaged — it releases automatically when you return it.`
+          : "You'll be redirected to Stripe to authorize the hold. Your card will only be charged if the item is damaged. The hold releases automatically when you return it."}
       </p>
 
       {/* Error */}
@@ -194,7 +227,7 @@ export default function DepositConfirmCard({
               <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
               <line x1="1" y1="10" x2="23" y2="10" />
             </svg>
-            Confirm &amp; place deposit
+            Confirm &amp; {isRent ? "pay" : "place deposit"}
           </>
         )}
       </button>

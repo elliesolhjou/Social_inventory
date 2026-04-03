@@ -83,7 +83,7 @@ export async function POST(
   // 3. Fetch transaction + verify ownership
   const { data: transaction, error: txError } = await supabase
     .from("transactions")
-    .select("id, item_id, borrower_id, owner_id, state, building_id")
+    .select("id, item_id, borrower_id, owner_id, state, building_id, transaction_type, daily_rent_cents, borrow_days")
     .eq("id", transactionId)
     .single();
 
@@ -219,6 +219,9 @@ export async function POST(
   if (action === "approve") {
     msgPayload.deposit_amount_cents = depositAmountCents;
     msgPayload.item_title = itemTitle;
+    msgPayload.transaction_type = transaction.transaction_type ?? "borrow";
+    msgPayload.daily_rent_cents = transaction.daily_rent_cents ?? null;
+    msgPayload.borrow_days = transaction.borrow_days ?? null;
   }
 
   await supabase.from("messages").insert({
