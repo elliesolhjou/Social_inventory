@@ -196,6 +196,7 @@ export default function ItemDetailPage() {
   const [showBorrowPrompt, setShowBorrowPrompt] = useState(false);
   const [borrowDays, setBorrowDays] = useState(3);
   const [customDays, setCustomDays] = useState(false);
+  const [transactionType, setTransactionType] = useState<"borrow" | "rent">("borrow");
   const supabase = createClient();
 
   const handleSearch = useCallback(
@@ -251,6 +252,9 @@ export default function ItemDetailPage() {
       const dueAt = new Date();
       dueAt.setDate(dueAt.getDate() + borrowDays);
 
+      const rentalFeeCents = transactionType === "rent" && item.rent_price_day_cents
+        ? item.rent_price_day_cents * borrowDays : 0;
+
       const { data: txn, error: txnError } = await supabase
         .from("transactions")
         .insert({
@@ -258,6 +262,8 @@ export default function ItemDetailPage() {
           building_id: item.building_id, state: "requested",
           deposit_held: item.deposit_cents, due_at: dueAt.toISOString(),
           borrow_days: borrowDays, requested_at: new Date().toISOString(),
+          transaction_type: transactionType,
+          daily_rent_cents: transactionType === "rent" ? item.rent_price_day_cents : null,
         })
         .select("id").single();
       if (txnError) throw txnError;
@@ -267,13 +273,18 @@ export default function ItemDetailPage() {
         .eq("id", user.id).single();
       const borrowerName = borrowerProfile?.display_name ?? "A neighbor";
 
+      const typeLabel = transactionType === "rent" ? "rent" : "borrow";
+      const feeNote = transactionType === "rent" && item.rent_price_day_cents
+        ? ` at $${(item.rent_price_day_cents / 100).toFixed(0)}/day ($${(rentalFeeCents / 100).toFixed(2)} total)`
+        : "";
+
       await supabase.from("borrow_requests").insert({
         transaction_id: txn.id, item_id: item.id, borrower_id: user.id,
         owner_id: item.owner.id, item_title: item.title, item_photo_url: null,
         borrower_display_name: borrowerProfile?.display_name ?? null,
         borrower_avatar_url: borrowerProfile?.avatar_url ?? null,
         status: "requested",
-        request_message: `I'd like to borrow your ${item.title} for ${borrowDays} day${borrowDays !== 1 ? "s" : ""} with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold.`,
+        request_message: `I'd like to ${typeLabel} your ${item.title} for ${borrowDays} day${borrowDays !== 1 ? "s" : ""}${feeNote} with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold.`,
         requested_at: new Date().toISOString(),
       });
 
@@ -284,7 +295,7 @@ export default function ItemDetailPage() {
 
       await supabase.from("messages").insert({
         sender_id: user.id, recipient_id: item.owner.id,
-        content: `Hi ${item.owner.display_name}! I'd like to borrow your ${item.title} for ${borrowDays} day${borrowDays !== 1 ? "s" : ""}. I've submitted a borrow request with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold. Let me know if that works for you!`,
+        content: `Hi ${item.owner.display_name}! I'd like to ${typeLabel} your ${item.title} for ${borrowDays} day${borrowDays !== 1 ? "s" : ""}${feeNote}. I've submitted a ${typeLabel} request with a $${(item.deposit_cents / 100).toFixed(0)} deposit hold. Let me know if that works for you!`,
         message_type: "borrow_request", topic: item.id,
         payload: {
           transaction_id: txn.id, item_id: item.id, item_title: item.title,
@@ -292,6 +303,9 @@ export default function ItemDetailPage() {
           borrower_avatar_url: borrowerProfile?.avatar_url ?? null,
           deposit_amount_cents: item.deposit_cents, condition: item.ai_condition,
           borrow_days: borrowDays,
+          transaction_type: transactionType,
+          daily_rent_cents: transactionType === "rent" ? item.rent_price_day_cents : null,
+          rental_fee_cents: rentalFeeCents || null,
         },
       });
 
@@ -448,7 +462,8 @@ export default function ItemDetailPage() {
               <div className="space-y-3">
                 {/* Borrow */}
                 {(item.borrow_available ?? true) && (
-                  <div className="bg-white border border-[#e6e2de]/50 p-5 rounded-2xl flex justify-between items-center hover:border-[#526442]/30 transition-colors cursor-pointer">
+                  <div onClick={() => { if (!isOwner && isAvailable && !borrowRequested) { setTransactionType("borrow"); setShowBorrowPrompt(true); } }}
+                    className="bg-white border border-[#e6e2de]/50 p-5 rounded-2xl flex justify-between items-center hover:border-[#526442]/30 transition-colors cursor-pointer">
                     <div className="flex gap-4 items-center">
                       <div className="w-11 h-11 rounded-full bg-[#d2e6bc] flex items-center justify-center text-[#526442]">
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -461,14 +476,15 @@ export default function ItemDetailPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.rent_price_day_cents / 100).toFixed(0)}</span>
-                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">per day + ${(item.deposit_cents / 100).toFixed(0)} deposit</p>
+                      <span className="text-2xl font-black text-[#526442] font-['Plus_Jakarta_Sans']">Free</span>
+                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">${(item.deposit_cents / 100).toFixed(0)} deposit hold</p>
                     </div>
                   </div>
                 )}
                 {/* Rent */}
                 {item.rent_available && item.rent_price_day_cents && (
-                  <div className="bg-white border border-[#e6e2de]/50 p-5 rounded-2xl flex justify-between items-center hover:border-[#ae3200]/20 transition-colors cursor-pointer">
+                  <div onClick={() => { if (!isOwner && isAvailable && !borrowRequested) { setTransactionType("rent"); setShowBorrowPrompt(true); } }}
+                    className="bg-white border border-[#e6e2de]/50 p-5 rounded-2xl flex justify-between items-center hover:border-[#ae3200]/20 transition-colors cursor-pointer">
                     <div className="flex gap-4 items-center">
                       <div className="w-11 h-11 rounded-full bg-[#ebe7e4] flex items-center justify-center text-[#5b4038]">
                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -525,7 +541,7 @@ export default function ItemDetailPage() {
               {/* Primary CTA */}
               {!isOwner && (
                 <button
-                  onClick={() => setShowBorrowPrompt(true)}
+                  onClick={() => { setTransactionType("borrow"); setShowBorrowPrompt(true); }}
                   disabled={!isAvailable || borrowRequested || borrowLoading}
                   className="w-full bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white py-5 rounded-full font-['Plus_Jakarta_Sans'] font-extrabold text-lg tracking-tight shadow-xl shadow-[#ae3200]/20 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -647,7 +663,9 @@ export default function ItemDetailPage() {
           <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-6 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-sm sm:w-full animate-slide-up">
             <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-[#e6e2de]/50">
               <div className="px-6 pt-6 pb-4 border-b border-[#e6e2de]">
-                <h3 className="font-['Plus_Jakarta_Sans'] font-bold text-base text-[#1c1b1a]">How long do you need it?</h3>
+                <h3 className="font-['Plus_Jakarta_Sans'] font-bold text-base text-[#1c1b1a]">
+                  {transactionType === "rent" ? "How long do you want to rent?" : "How long do you need it?"}
+                </h3>
                 <p className="text-xs text-[#8f7067] mt-1 font-['Be_Vietnam_Pro']">{item.title} · Max {item.max_borrow_days} days</p>
               </div>
               <div className="px-6 py-5">
@@ -701,15 +719,31 @@ export default function ItemDetailPage() {
                     <span className="font-['Plus_Jakarta_Sans'] font-bold">${(item.deposit_cents / 100).toFixed(0)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#8f7067] font-['Be_Vietnam_Pro']">Fee</span>
-                    <span className="font-['Plus_Jakarta_Sans'] font-bold text-[#526442]">Free</span>
+                    <span className="text-[#8f7067] font-['Be_Vietnam_Pro']">
+                      {transactionType === "rent" ? `Rental fee (${borrowDays} × $${((item.rent_price_day_cents ?? 0) / 100).toFixed(0)})` : "Fee"}
+                    </span>
+                    {transactionType === "rent" && item.rent_price_day_cents ? (
+                      <span className="font-['Plus_Jakarta_Sans'] font-bold text-[#ae3200]">
+                        ${((item.rent_price_day_cents * borrowDays) / 100).toFixed(2)}
+                      </span>
+                    ) : (
+                      <span className="font-['Plus_Jakarta_Sans'] font-bold text-[#526442]">Free</span>
+                    )}
                   </div>
+                  {transactionType === "rent" && item.rent_price_day_cents && (
+                    <div className="flex justify-between text-sm mt-2 pt-2 border-t border-[#e6e2de]/50">
+                      <span className="text-[#1c1b1a] font-['Be_Vietnam_Pro'] font-medium">Total charged</span>
+                      <span className="font-['Plus_Jakarta_Sans'] font-bold text-[#1c1b1a]">
+                        ${(((item.rent_price_day_cents * borrowDays) + item.deposit_cents) / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 <button onClick={handleBorrowRequest} disabled={borrowLoading}
                   className="w-full py-3.5 bg-[#ae3200] text-white rounded-full font-['Plus_Jakarta_Sans'] font-bold text-sm hover:brightness-110 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
                   {borrowLoading ? (
                     <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Sending request...</>
-                  ) : "Send borrow request"}
+                  ) : transactionType === "rent" ? "Send rent request" : "Send borrow request"}
                 </button>
                 <button onClick={() => setShowBorrowPrompt(false)}
                   className="w-full mt-2 py-2 text-xs text-[#8f7067] hover:text-[#5b4038] transition-colors font-['Be_Vietnam_Pro']">
@@ -750,7 +784,7 @@ export default function ItemDetailPage() {
                 </svg>
                 Message
               </button>
-              <button onClick={() => setShowBorrowPrompt(true)}
+              <button onClick={() => { setTransactionType("borrow"); setShowBorrowPrompt(true); }}
                 disabled={!isAvailable || borrowRequested || borrowLoading}
                 className="flex-1 py-3.5 rounded-full font-['Plus_Jakarta_Sans'] font-bold text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-b from-[#ae3200] to-[#ff5a1f] text-white">
                 {borrowLoading ? (
