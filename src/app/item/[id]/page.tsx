@@ -518,7 +518,7 @@ export default function ItemDetailPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.sell_price_cents / 100).toFixed(0)}</span>
+                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.sell_price_cents / 100).toFixed(2)}</span>
                       {/* <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">no deposit needed</p> */}
                     </div>
                   </div>
@@ -531,7 +531,7 @@ export default function ItemDetailPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" />
                       </svg>
                       <p className="text-xs text-[#5b4038] font-['Be_Vietnam_Pro']">
-                        <span className="font-bold">Rent-to-Own:</span> 80% of rental fees apply toward the ${(item.sell_price_cents / 100).toFixed(0)} purchase price.
+                        <span className="font-bold">Rent-to-Own:</span> 80% of rental fees apply toward the ${(item.sell_price_cents / 100).toFixed(2)} purchase price.
                       </p>
                     </div>
                   </div>
