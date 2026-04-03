@@ -497,8 +497,8 @@ export default function ItemDetailPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.rent_price_day_cents / 100).toFixed(0)}</span>
-                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">per day+ ${(item.deposit_cents / 100).toFixed(0)} deposit</p>
+                      <span className="text-2xl font-black text-[#1c1b1a] font-['Plus_Jakarta_Sans']">${(item.rent_price_day_cents / 100).toFixed(2)}</span>
+                      <p className="text-[10px] text-[#8f7067] font-['Be_Vietnam_Pro']">per day + ${(item.deposit_cents / 100).toFixed(0)} deposit</p>
                       
                     </div>
                   </div>
@@ -720,7 +720,7 @@ export default function ItemDetailPage() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-[#8f7067] font-['Be_Vietnam_Pro']">
-                      {transactionType === "rent" ? `Rental fee (${borrowDays} × $${((item.rent_price_day_cents ?? 0) / 100).toFixed(0)})` : "Fee"}
+                      {transactionType === "rent" ? `Rental fee (${borrowDays} × $${((item.rent_price_day_cents ?? 0) / 100).toFixed(2)})` : "Fee"}
                     </span>
                     {transactionType === "rent" && item.rent_price_day_cents ? (
                       <span className="font-['Plus_Jakarta_Sans'] font-bold text-[#ae3200]">
